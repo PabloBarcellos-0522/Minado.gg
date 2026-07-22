@@ -1,0 +1,253 @@
+/* =============================================================
+   Minado.gg — Design Tokens
+   Multiplayer Minesweeper social game (brand: Jester + Everyman)
+   Flat, playful, colorful. Plain CSS custom properties.
+   ============================================================= */
+
+:root {
+  /* ----- Base font / reset scale ----- */
+  --font-base: 16px;
+  --font-heading: "Baloo 2", system-ui, sans-serif;
+  --font-body: "Comic Neue", system-ui, sans-serif;
+  --line-height-body: 1.6;
+  --line-height-heading: 1.2;
+
+  /* =========================================================
+     COLOR — PRIMARY (verde campo / minesweeper field)
+     ========================================================= */
+  --color-primary-50:  #ECFDF3;
+  --color-primary-100: #D1FADF;
+  --color-primary-200: #A6F4C5;
+  --color-primary-300: #6CE9A6;
+  --color-primary-400: #32D583;
+  --color-primary-500: #16A34A;
+  --color-primary-600: #128A43;
+  --color-primary-700: #0E6B36;
+  --color-primary-800: #0C552B;
+  --color-primary-900: #0A4523;
+
+  /* =========================================================
+     COLOR — SECONDARY (purple)
+     ========================================================= */
+  --color-secondary-50:  #F5F3FF;
+  --color-secondary-100: #EDE9FE;
+  --color-secondary-200: #DDD6FE;
+  --color-secondary-300: #C4B5FD;
+  --color-secondary-400: #A78BFA;
+  --color-secondary-500: #8B5CF6;
+  --color-secondary-600: #7C3AED;
+  --color-secondary-700: #6D28D9;
+  --color-secondary-800: #5B21B6;
+  --color-secondary-900: #4C1D95;
+
+  /* =========================================================
+     COLOR — ACCENT (reward gold / confetti)
+     ========================================================= */
+  --color-accent-50:  #FFFBEB;
+  --color-accent-100: #FEF3C7;
+  --color-accent-200: #FDE68A;
+  --color-accent-300: #FCD34D;
+  --color-accent-400: #FBBF24;
+  --color-accent-500: #F59E0B;
+  --color-accent-600: #D97706;
+  --color-accent-700: #B45309;
+  --color-accent-800: #92400E;
+  --color-accent-900: #78350F;
+
+  /* =========================================================
+     COLOR — NEUTRAL (slate-ish, cool gray)
+     ========================================================= */
+  --color-neutral-50:  #F8FAFC;
+  --color-neutral-100: #F1F5F9;
+  --color-neutral-200: #E2E8F0;
+  --color-neutral-300: #CBD5E1;
+  --color-neutral-400: #94A3B8;
+  --color-neutral-500: #64748B;
+  --color-neutral-600: #475569;
+  --color-neutral-700: #334155;
+  --color-neutral-800: #1E293B;
+  --color-neutral-900: #0F172A;
+
+  /* =========================================================
+     COLOR — SEMANTIC
+     ========================================================= */
+  --color-success: #22C55E;
+  --color-success-soft: #DCFCE7;
+  --color-warning: #F59E0B;
+  --color-warning-soft: #FEF3C7;
+  --color-error:   #EF4444;
+  --color-error-soft:   #FEE2E2;
+  --color-error-600: #DC2626;
+  --color-error-700: #B91C1C;
+  --color-on-error: #FFFFFF;
+  --color-info:    #3B82F6;
+  --color-info-soft:    #DBEAFE;
+
+  /* ----- Chart / data palette (5 distinct hues) ----- */
+  --chart-1: #16A34A; /* green  */
+  --chart-2: #8B5CF6; /* purple */
+  --chart-3: #F59E0B; /* gold   */
+  --chart-4: #3B82F6; /* blue   */
+  --chart-5: #06B6D4; /* cyan   */
+
+  /* =========================================================
+     SURFACE / BACKGROUND / TEXT (light mode)
+     ========================================================= */
+  --color-bg:        #F8FAFC; /* neutral light bg — green reserved for accents */
+  --color-surface:   #FFFFFF;
+  --color-surface-muted: #F1F5F9;
+  --color-input:     #F8FAFC;
+  --color-border:    #E2E8F0;
+  --color-ink:       #0F172A; /* foreground / slate-900 */
+  --color-ink-muted: #64748B;
+  --color-ring:      #16A34A;
+  --color-scrim:     color-mix(in srgb, var(--color-neutral-900) 55%, transparent);
+
+  /* =========================================================
+     SPACING (4px base)
+     ========================================================= */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-7:  28px;
+  --space-8:  32px;
+  --space-9:  36px;
+  --space-10: 40px;
+  --space-11: 44px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* =========================================================
+     RADIUS (friendly / rounded)
+     ========================================================= */
+  --radius-sm:  8px;
+  --radius-md:  14px;
+  --radius-lg:  22px;
+  --radius-xl:  30px;
+  --radius-full: 999px;
+
+  /* =========================================================
+     ELEVATION (subtle, flat-ish, colored tints)
+     ========================================================= */
+  --shadow-sm: 0 2px 6px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 8px 22px rgba(15, 23, 42, 0.12);
+  --shadow-lg: 0 18px 44px rgba(15, 23, 42, 0.16);
+
+  /* =========================================================
+     TYPOGRAPHY SCALE
+     ========================================================= */
+  --fs-h1: 3rem;     /* 48 */
+  --fs-h2: 2.25rem;  /* 36 */
+  --fs-h3: 1.75rem;  /* 28 */
+  --fs-h4: 1.375rem; /* 22 */
+  --fs-h5: 1.125rem; /* 18 */
+  --fs-h6: 1rem;     /* 16 */
+  --fs-body: 1rem;   /* 16 */
+  --fs-lead: 1.25rem;/* 20 */
+  --fs-small: 0.8125rem; /* 13 */
+
+  --fw-light:   300;
+  --fw-regular: 400;
+  --fw-medium:  600;
+  --fw-bold:    700;
+  --fw-extra:   800;
+
+  /* =========================================================
+     MOTION
+     ========================================================= */
+  --duration-fast: 140ms;
+  --duration-base: 220ms;
+  --duration-slow: 420ms;
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ----- z-index ladder ----- */
+  --z-tooltip: 50;
+  --z-modal: 100;
+  --z-toast: 150;
+}
+
+/* =============================================================
+   DARK MODE — warm dark purple-black, brand colors lightened
+   for >=4.5:1 contrast on dark surfaces.
+   ============================================================= */
+.dark {
+  /* Lightened brand scales for contrast on dark surfaces */
+  --color-primary-50:  #062B1A;
+  --color-primary-100: #0A3D24;
+  --color-primary-200: #0E5530;
+  --color-primary-300: #15803D;
+  --color-primary-400: #22C55E;
+  --color-primary-500: #4ADE80;
+  --color-primary-600: #86EFAC;
+  --color-primary-700: #BBF7D0;
+  --color-primary-800: #DCFCE7;
+  --color-primary-900: #ECFDF3;
+
+  --color-secondary-50:  #1B1430;
+  --color-secondary-100: #241A45;
+  --color-secondary-200: #342468;
+  --color-secondary-300: #5B3FA0;
+  --color-secondary-400: #A78BFA;
+  --color-secondary-500: #B794FF;
+  --color-secondary-600: #C4B5FD;
+  --color-secondary-700: #DDD6FE;
+  --color-secondary-800: #EDE9FE;
+  --color-secondary-900: #F5F3FF;
+
+  --color-accent-50:  #2A2008;
+  --color-accent-100: #3D2E0B;
+  --color-accent-200: #5C440F;
+  --color-accent-300: #946318;
+  --color-accent-400: #FBBF24;
+  --color-accent-500: #FCD34D;
+  --color-accent-600: #FDE68A;
+  --color-accent-700: #FEF3C7;
+  --color-accent-800: #FFFBEB;
+  --color-accent-900: #FFFDF5;
+
+  --color-neutral-50:  #0B0710;
+  --color-neutral-100: #16111E;
+  --color-neutral-200: #221A2C;
+  --color-neutral-300: #322641;
+  --color-neutral-400: #4C3F5E;
+  --color-neutral-500: #6E6280;
+  --color-neutral-600: #9589A8;
+  --color-neutral-700: #BDAFBF; /* lightened for contrast */
+  --color-neutral-800: #D8CADD;
+  --color-neutral-900: #F1ECF5;
+
+  --color-success: #4ADE80;
+  --color-success-soft: #14311F;
+  --color-warning: #FBBF24;
+  --color-warning-soft: #312607;
+  --color-error:   #F87171;
+  --color-error-soft:   #321515;
+  --color-info:    #60A5FA;
+  --color-info-soft:    #0F2238;
+
+  --chart-1: #4ADE80;
+  --chart-2: #B794FF;
+  --chart-3: #FCD34D;
+  --chart-4: #60A5FA;
+  --chart-5: #22D3EE;
+
+  --color-bg:        #0F172A; /* neutral dark — green kept as accent only */
+  --color-surface:   #1E293B;
+  --color-surface-muted: #243042;
+  --color-input:     #243042;
+  --color-border:    #334155;
+  --color-ink:       #F8FAFC;
+  --color-ink-muted: #94A3B8;
+  --color-ring:      #4ADE80;
+  --color-scrim:     rgba(0, 0, 0, 0.72);
+
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 22px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.55);
+}

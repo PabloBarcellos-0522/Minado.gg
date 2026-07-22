@@ -1,0 +1,221 @@
+/* =============================================================
+   Minado.gg — Game-specific styles + motion
+   ============================================================= */
+
+/* =============================================================
+   MASCOTE / BOMB FACE (brand bomb, pure CSS + SVG)
+   ============================================================= */
+.mascote {
+  --bomb-size: 80px;
+  position: relative;
+  width: var(--bomb-size);
+  height: var(--bomb-size);
+  display: inline-grid;
+  place-items: center;
+}
+.mascote svg { width: 100%; height: 100%; overflow: visible; }
+
+/* happy / idle bob */
+.mascote--happy { animation: bob 2.4s var(--ease-standard) infinite; }
+@keyframes bob {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-6px) rotate(2deg); }
+}
+
+/* exploded state — recognizable sad red bomb, NOT flipped upside-down */
+.mascote--exploded .bomb-body { fill: var(--color-error); }
+.mascote--exploded .bomb-face { transform: none; }
+.mascote--exploded { animation: explode-pop var(--duration-slow) var(--ease-bounce); }
+@keyframes explode-pop {
+  0% { transform: scale(0.6); }
+  60% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
+/* =============================================================
+   BOARD CELL
+   ============================================================= */
+.board {
+  display: grid;
+  grid-template-columns: repeat(var(--board-cols, 8), 1fr);
+  gap: var(--space-1);
+  background: var(--color-surface-muted);
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
+  width: fit-content;
+  box-shadow: var(--shadow-sm);
+}
+.board-cell {
+  width: 44px; height: 44px;
+  display: grid; place-items: center;
+  font-family: var(--font-heading); font-weight: var(--fw-extra);
+  border-radius: var(--radius-md);
+  background: var(--color-primary-300);
+  color: var(--color-neutral-900);
+  cursor: pointer;
+  border: 2px solid var(--color-primary-400);
+  box-shadow: 0 3px 0 var(--color-primary-500);
+  transition: transform var(--duration-fast) var(--ease-bounce),
+              background var(--duration-base) var(--ease-standard),
+              box-shadow var(--duration-base) var(--ease-standard);
+  user-select: none;
+}
+.board-cell:not(.board-cell--revealed):hover { transform: translateY(-3px); background: var(--color-primary-200); }
+.board-cell:active { transform: translateY(1px); box-shadow: 0 1px 0 var(--color-primary-500); }
+
+.board-cell--revealed {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow: none;
+  cursor: default;
+  color: var(--color-ink-muted);
+}
+.board-cell--safe { background: var(--color-success-soft); border-color: var(--color-success); box-shadow: none; color: var(--color-success); }
+.dark .board-cell--safe { background: var(--color-success-soft); border-color: var(--color-success-soft); color: var(--color-success); }
+.board-cell--flagged { background: var(--color-accent-100); border-color: var(--color-accent-400); box-shadow: none; }
+.board-cell--mine {
+  background: var(--color-error); border-color: var(--color-error);
+  box-shadow: none; color: var(--color-surface);
+}
+.board-cell--mine.board-cell--revealed { animation: mine-pop var(--duration-base) var(--ease-bounce); }
+@keyframes mine-pop { 0% { transform: scale(0.7); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
+
+/* number colors (friendly, color-coded) */
+.board-cell--number-1 { color: var(--color-info); }
+.board-cell--number-2 { color: var(--color-primary-700); }
+.board-cell--number-3 { color: var(--color-error-600); }
+.board-cell--number-4 { color: var(--color-secondary-600); }
+.board-cell--number-5 { color: var(--color-accent-600); }
+.board-cell--number-6 { color: var(--color-accent-700); }
+.board-cell--number-7 { color: var(--color-neutral-700); }
+.board-cell--number-8 { color: var(--color-primary-800); }
+
+/* =============================================================
+   FX — BOOM (comedic explosion)
+   ============================================================= */
+.fx-boom {
+  position: relative;
+  width: 120px; height: 120px;
+  display: grid; place-items: center;
+}
+.fx-boom__core {
+  width: 40px; height: 40px; border-radius: var(--radius-full);
+  background: radial-gradient(circle, var(--color-accent-300), var(--color-error));
+}
+.fx-boom__particle {
+  position: absolute;
+  width: 16px; height: 16px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-400);
+  top: 50%; left: 50%;
+  opacity: 0;
+}
+.fx-boom.is-active { animation: boom-core var(--duration-slow) var(--ease-bounce); }
+.fx-boom.is-active .fx-boom__particle { animation: boom-particle var(--duration-slow) var(--ease-standard) forwards; }
+.fx-boom.is-active .fx-boom__particle:nth-child(2) { background: var(--color-accent-400); animation-delay: 30ms; }
+.fx-boom.is-active .fx-boom__particle:nth-child(3) { background: var(--color-secondary-400); animation-delay: 60ms; }
+.fx-boom.is-active .fx-boom__particle:nth-child(4) { background: var(--color-warning); animation-delay: 90ms; }
+.fx-boom.is-active .fx-boom__particle:nth-child(5) { background: var(--color-success); animation-delay: 120ms; }
+.fx-boom.is-active .fx-boom__particle:nth-child(6) { background: var(--color-info); animation-delay: 150ms; }
+@keyframes boom-core {
+  0% { transform: scale(0.3) rotate(0); }
+  50% { transform: scale(1.4) rotate(20deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+@keyframes boom-particle {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(0.3) rotate(180deg); }
+}
+
+/* =============================================================
+   FX — CONFETTI (win / acerto feedback)
+   ============================================================= */
+.fx-confetti {
+  position: relative;
+  height: 120px; overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-muted);
+}
+.confetti-piece {
+  position: absolute; top: -10px;
+  width: 12px; height: 16px; border-radius: 3px;
+  opacity: 0;
+}
+.confetti-piece:nth-child(1) { left: 10%; background: var(--chart-1); }
+.confetti-piece:nth-child(2) { left: 25%; background: var(--chart-2); }
+.confetti-piece:nth-child(3) { left: 40%; background: var(--chart-3); }
+.confetti-piece:nth-child(4) { left: 55%; background: var(--chart-4); }
+.confetti-piece:nth-child(5) { left: 70%; background: var(--chart-5); }
+.confetti-piece:nth-child(6) { left: 85%; background: var(--chart-1); }
+.fx-confetti.is-active .confetti-piece { animation: fall 1.6s var(--ease-standard) infinite; }
+.fx-confetti.is-active .confetti-piece:nth-child(1) { animation-delay: 0s; }
+.fx-confetti.is-active .confetti-piece:nth-child(2) { animation-delay: 0.2s; }
+.fx-confetti.is-active .confetti-piece:nth-child(3) { animation-delay: 0.4s; }
+.fx-confetti.is-active .confetti-piece:nth-child(4) { animation-delay: 0.1s; }
+.fx-confetti.is-active .confetti-piece:nth-child(5) { animation-delay: 0.5s; }
+.fx-confetti.is-active .confetti-piece:nth-child(6) { animation-delay: 0.3s; }
+@keyframes fall {
+  0% { opacity: 1; transform: translateY(0) rotate(0); }
+  100% { opacity: 0; transform: translateY(130px) rotate(360deg); }
+}
+
+/* =============================================================
+   FX — SCREEN SHAKE (defeat tremor)
+   ============================================================= */
+.fx-screen-shake.is-active { animation: screen-shake 0.5s var(--ease-standard); }
+@keyframes screen-shake {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-6px, 3px); }
+  40% { transform: translate(6px, -3px); }
+  60% { transform: translate(-4px, -2px); }
+  80% { transform: translate(4px, 2px); }
+}
+
+/* =============================================================
+   QUICK-REACTION PING CHIPS (SVG icons, not emoji)
+   ============================================================= */
+.ping-row { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.ping {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  font-family: var(--font-heading); font-weight: var(--fw-bold);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  color: var(--color-ink);
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-bounce),
+              background var(--duration-base) var(--ease-standard);
+}
+.ping:hover { transform: translateY(-2px) scale(1.04); background: var(--color-surface-muted); }
+.ping:active { transform: scale(0.94); }
+.ping svg { width: 18px; height: 18px; }
+
+/* =============================================================
+   WIN / LOSE BANNERS (never punitive — zoeiro defeat)
+   ============================================================= */
+.banner {
+  border-radius: var(--radius-lg);
+  padding: var(--space-8) var(--space-6);
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+}
+.banner__emoji { font-family: var(--font-heading); font-weight: var(--fw-extra); font-size: 2.5rem; }
+.banner__title { font-family: var(--font-heading); font-weight: var(--fw-extra); font-size: var(--fs-h2); margin: var(--space-2) 0; }
+.banner__sub { font-family: var(--font-body); color: var(--color-ink); }
+.win-banner { background: linear-gradient(135deg, var(--color-success-soft), var(--color-accent-100)); border: 2px solid var(--color-success); }
+.lose-banner { background: linear-gradient(135deg, var(--color-error-soft), var(--color-primary-100)); border: 2px solid var(--color-primary-400); }
+.lose-banner .banner__title { color: var(--color-primary-700); }
+
+/* =============================================================
+   REDUCED MOTION
+   ============================================================= */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .mascote--happy { animation: none; }
+}
