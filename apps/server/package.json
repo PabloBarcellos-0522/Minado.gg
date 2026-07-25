@@ -4,6 +4,39 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "echo 'Server not yet implemented'"
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@minado/shared": "file:../../packages/shared",
+    "@prisma/adapter-pg": "^7.9.0",
+    "@prisma/client": "^7.9.0",
+    "axios": "^1.18.1",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.4.2",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "passport": "^0.7.0",
+    "passport-discord": "^0.1.4",
+    "passport-github": "^1.1.0",
+    "passport-google-oauth20": "^2.0.0",
+    "pg": "^8.22.0",
+    "prisma": "^7.9.0",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/express": "^5.0.4",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.15.3",
+    "@types/passport": "^1.0.17",
+    "@types/passport-discord": "^0.1.15",
+    "@types/passport-github": "^1.1.13",
+    "@types/passport-google-oauth20": "^2.0.17",
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.19.4",
+    "typescript": "~5.8.3"
   }
 }

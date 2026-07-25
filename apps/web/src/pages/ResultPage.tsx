@@ -8,6 +8,7 @@ import { Banner } from '@/components/game/Banner'
 import { FxConfetti } from '@/components/game/FxConfetti'
 import { Navbar } from '@/components/blocks/Navbar'
 import { MatchCard } from '@/components/blocks/MatchCard'
+import { useGameStore } from '@/store/gameStore'
 import type { GameMode } from '@minado/shared'
 
 const modeLabels: Record<GameMode, string> = {
@@ -18,35 +19,28 @@ const modeLabels: Record<GameMode, string> = {
   'fog-of-war': 'Fog of War',
 }
 
-const mockResult = {
-  matchId: 'MATCH_123',
-  mode: 'competitive' as GameMode,
-  winner: '1',
-  scoreboard: [
-    { playerId: '1', username: 'Pablo', avatarUrl: '', score: 1250, rank: 1, isYou: true },
-    { playerId: '2', username: 'Ana', avatarUrl: '', score: 980, rank: 2, isYou: false },
-    { playerId: '3', username: 'Carlos', avatarUrl: '', score: 720, rank: 3, isYou: false },
-    { playerId: '4', username: 'Bia', avatarUrl: '', score: 510, rank: 4, isYou: false },
-  ],
-  startedAt: '2024-01-15T14:30:00Z',
-  endedAt: '2024-01-15T14:45:00Z',
-  actions: [
-    { playerId: '1', type: 'reveal', points: 10, timestamp: '14:30:15' },
-    { playerId: '2', type: 'flag-correct', points: 25, timestamp: '14:30:22' },
-    { playerId: '1', type: 'flood-fill', points: 30, timestamp: '14:30:45' },
-    { playerId: '3', type: 'explode', points: -50, timestamp: '14:31:10' },
-    { playerId: '4', type: 'flag-wrong', points: -15, timestamp: '14:32:00' },
-    { playerId: '1', type: 'win', points: 200, timestamp: '14:44:50' },
-  ],
-}
-
 export function ResultPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const result = useGameStore((s) => s.lastMatchResult)
 
-  // In a real app, fetch result from server
-  const result = mockResult
-  const isWinner = result.winner === '1'
+  if (!result) {
+    return (
+      <div className="min-h-dvh flex flex-col">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center p-5">
+          <div className="text-center">
+            <p className="font-heading font-bold text-h5 text-ink-muted mb-4">Nenhum resultado disponível</p>
+            <Button variant="primary" onClick={() => navigate('/lobby')}>
+              Voltar ao Lobby
+            </Button>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  const isWinner = result.winner === result.scoreboard.find((p) => p.isYou)?.playerId
   const myEntry = result.scoreboard.find((p) => p.isYou)
   const showConfetti = isWinner
 
@@ -60,7 +54,6 @@ export function ResultPage() {
   }
 
   const handleRematch = () => {
-    // In real app: emit socket event for rematch
     navigate(`/sala/${id}`)
   }
 
@@ -74,7 +67,6 @@ export function ResultPage() {
 
       <main className="flex-1 flex items-center justify-center p-5">
         <div className="w-full max-w-3xl">
-          {/* Victory/Defeat Banner */}
           <div className="mb-6">
             <Banner
               type={isWinner ? 'win' : 'lose'}
@@ -90,7 +82,6 @@ export function ResultPage() {
             </Banner>
           </div>
 
-          {/* Match Info Card */}
           <Card className="mb-6">
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -123,7 +114,6 @@ export function ResultPage() {
             </CardContent>
           </Card>
 
-          {/* Scoreboard */}
           <Card className="mb-6">
             <CardHeader>
               <CardTitle>🏆 Placar Final</CardTitle>
@@ -188,7 +178,6 @@ export function ResultPage() {
             </CardContent>
           </Card>
 
-          {/* Action History */}
           <Card className="mb-6">
             <CardHeader>
               <CardTitle>📜 Histórico de Jogadas</CardTitle>
@@ -228,7 +217,6 @@ export function ResultPage() {
             </CardContent>
           </Card>
 
-          {/* Match Card / Rematch */}
           <Card className="mb-6">
             <CardContent className="pt-0">
               <MatchCard
@@ -240,7 +228,6 @@ export function ResultPage() {
             </CardContent>
           </Card>
 
-          {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-3">
             <Button variant="primary" size="lg" className="flex-1" onClick={handleRematch}>
               <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -264,7 +251,6 @@ export function ResultPage() {
             </Link>
           </div>
 
-          {/* Share */}
           <div className="mt-6 p-4 rounded-[14px] bg-surface-muted border border-border text-center">
             <p className="text-small text-ink-muted mb-2">Quiser compartilhar o resultado?</p>
             <div className="flex gap-2 justify-center">

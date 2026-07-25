@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -11,7 +11,9 @@ import { FxBoom } from '@/components/game/FxBoom'
 import { FxConfetti } from '@/components/game/FxConfetti'
 import { ChatPanel } from '@/components/blocks/ChatPanel'
 import { Navbar } from '@/components/blocks/Navbar'
-import { generateBoard, floodFill, checkWin, type Board, type GameMode, type Difficulty, type Cell } from '@minado/shared'
+import { useGameStore } from '@/store/gameStore'
+import { useRoomStore } from '@/store/roomStore'
+import type { GameMode, Difficulty } from '@minado/shared'
 
 const difficultyConfigs: Record<Difficulty, { rows: number; cols: number; mines: number }> = {
   easy: { rows: 9, cols: 9, mines: 10 },
@@ -29,177 +31,101 @@ const modeLabels: Record<GameMode, string> = {
 }
 
 const playerColors = [
-  '#16A34A', // primary
-  '#8B5CF6', // secondary
-  '#F59E0B', // accent
-  '#EF4444', // error
-  '#06B6D4', // chart-5
-  '#22C55E', // success
-  '#A855F7', // purple
-  '#EC4899', // pink
+  '#16A34A', '#8B5CF6', '#F59E0B', '#EF4444',
+  '#06B6D4', '#22C55E', '#A855F7', '#EC4899',
 ]
 
-interface Player {
-  id: string
-  username: string
-  score: number
-  color: string
-  isEliminated?: boolean
+const formatTime = (seconds: number) => {
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0')
+  const s = (seconds % 60).toString().padStart(2, '0')
+  return `${m}:${s}`
 }
-
-const mockPlayers: Player[] = [
-  { id: '1', username: 'Pablo', score: 0, color: playerColors[0] },
-  { id: '2', username: 'Ana', score: 0, color: playerColors[1] },
-  { id: '3', username: 'Carlos', score: 0, color: playerColors[2] },
-  { id: '4', username: 'Bia', score: 0, color: playerColors[3] },
-]
-
-const mockMessages = [
-  { id: '1', from: 'Sistema', text: 'Partida iniciada! Boa sorte!', ts: '14:35', isSystem: true },
-  { id: '2', from: 'Ana', text: 'Vou começar pelo canto', ts: '14:35' },
-  { id: '3', from: 'Carlos', text: 'Cuidado no centro', ts: '14:36' },
-]
 
 export function MatchPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [currentUserId] = useState('1')
 
-  // Game state
-  const [board, setBoard] = useState<Board>([])
-  const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing')
-  const [players, setPlayers] = useState<Player[]>(mockPlayers)
-  const [messages, setMessages] = useState(mockMessages)
+  const board = useGameStore((s) => s.board)
+  const gameState = useGameStore((s) => s.gameState)
+  const players = useGameStore((s) => s.players)
+  const messages = useGameStore((s) => s.messages)
+  const timeElapsed = useGameStore((s) => s.timeElapsed)
+  const flagsPlaced = useGameStore((s) => s.flagsPlaced)
+  const showBoom = useGameStore((s) => s.showBoom)
+  const showConfetti = useGameStore((s) => s.showConfetti)
+  const boardConfig = useGameStore((s) => s.boardConfig)
+  const currentUserId = useGameStore((s) => s.currentUserId)
+
+  const initBoard = useGameStore((s) => s.initBoard)
+  const setPlayers = useGameStore((s) => s.setPlayers)
+  const revealCell = useGameStore((s) => s.revealCell)
+  const flagCell = useGameStore((s) => s.flagCell)
+  const addMessage = useGameStore((s) => s.addMessage)
+  const tick = useGameStore((s) => s.tick)
+  const setShowBoom = useGameStore((s) => s.setShowBoom)
+  const setShowConfetti = useGameStore((s) => s.setShowConfetti)
+  const setCurrentUserId = useGameStore((s) => s.setCurrentUserId)
+
+  const room = useRoomStore((s) => s.currentRoom)
+
   const [showChat, setShowChat] = useState(true)
-  const [timeElapsed, setTimeElapsed] = useState(0)
-  const [flagsPlaced, setFlagsPlaced] = useState(0)
-  const [showBoom, setShowBoom] = useState(false)
-  const [showConfetti, setShowConfetti] = useState(false)
-  const [firstClick, setFirstClick] = useState(true)
-  const [mineCount, setMineCount] = useState(0)
 
-  // Timer
+  const mineCount = boardConfig.mines
+  const minesRemaining = mineCount - flagsPlaced
+
   useEffect(() => {
-    if (gameState === 'playing') {
-      const interval = setInterval(() => setTimeElapsed((t) => t + 1), 1000)
-      return () => clearInterval(interval)
+    const config = room?.boardConfig ?? difficultyConfigs.medium
+    const mode = room?.mode ?? 'competitive'
+    initBoard(config, mode)
+
+    const gamePlayers = (room?.players.length ? room.players : [
+      { id: '1', username: 'Pablo' },
+      { id: '2', username: 'Ana' },
+      { id: '3', username: 'Carlos' },
+      { id: '4', username: 'Bia' },
+    ]).map((p, i) => ({
+      id: p.id,
+      username: p.username,
+      score: 0,
+      color: playerColors[i % playerColors.length],
+    }))
+
+    setPlayers(gamePlayers)
+    const me = gamePlayers[0]
+    if (me) setCurrentUserId(me.id)
+
+    const sysMsg = {
+      id: 'sys-start',
+      from: 'Sistema',
+      text: 'Partida iniciada! Boa sorte!',
+      ts: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      isSystem: true,
     }
-  }, [gameState])
-
-  // Initialize board
-  useEffect(() => {
-    const config = difficultyConfigs.medium // In real app, get from room
-    const newBoard = generateBoard(config.rows, config.cols, config.mines)
-    setBoard(newBoard)
-    setMineCount(config.mines)
-    setFlagsPlaced(0)
+    addMessage(sysMsg)
   }, [])
 
-  // Count flags
   useEffect(() => {
-    let count = 0
-    board.forEach((row: Cell[]) => row.forEach((cell: Cell) => { if (cell.isFlagged) count++ }))
-    setFlagsPlaced(count)
-  }, [board])
-
-  // Check win
-  useEffect(() => {
-    if (gameState === 'playing' && checkWin(board)) {
-      setGameState('won')
-      setShowConfetti(true)
-      // Add win points
-      setPlayers((prev) =>
-        prev.map((p) => (p.id === currentUserId ? { ...p, score: p.score + 200 } : p))
-      )
-      setTimeout(() => navigate(`/partida/${id}/resultado`), 3000)
+    if (gameState === 'playing') {
+      const interval = setInterval(tick, 1000)
+      return () => clearInterval(interval)
     }
-  }, [board, gameState, currentUserId, id, navigate])
+  }, [gameState, tick])
 
-  const handleReveal = useCallback((row: number, col: number) => {
-    if (gameState !== 'playing') return
+  useEffect(() => {
+    if (gameState === 'won' || gameState === 'lost') {
+      const delay = gameState === 'won' ? 3000 : 2000
+      const timer = setTimeout(() => navigate(`/partida/${id}/resultado`), delay)
+      return () => clearTimeout(timer)
+    }
+  }, [gameState, id, navigate])
 
-    setBoard((prevBoard: Board) => {
-      const cell = prevBoard[row][col]
-      if (cell.isRevealed || cell.isFlagged) return prevBoard
+  const handleReveal = (row: number, col: number) => {
+    revealCell(row, col)
+  }
 
-      let newBoard = prevBoard.map((r: Cell[]) => [...r])
-
-      if (firstClick) {
-        // Regenerate board ensuring first click is safe
-        const config = difficultyConfigs.medium
-        newBoard = generateBoard(config.rows, config.cols, config.mines, row, col)
-        setFirstClick(false)
-        // Re-reveal the clicked cell
-        const newCell = newBoard[row][col]
-        if (newCell.adjacentMines === 0) {
-          const revealed = floodFill(newBoard, row, col)
-          revealed.forEach(({ row: r, col: c }) => {
-            newBoard[r][c] = { ...newBoard[r][c], isRevealed: true, revealedBy: currentUserId }
-          })
-        } else {
-          newBoard[row][col] = { ...newCell, isRevealed: true, revealedBy: currentUserId }
-        }
-      } else if (cell.hasMine) {
-        // Hit a mine!
-        newBoard[row][col] = { ...cell, isRevealed: true }
-        setGameState('lost')
-        setShowBoom(true)
-        setPlayers((prev) =>
-          prev.map((p) => (p.id === currentUserId ? { ...p, score: p.score - 50 } : p))
-        )
-        setTimeout(() => navigate(`/partida/${id}/resultado`), 2000)
-      } else if (cell.adjacentMines === 0) {
-        // Flood fill
-        const revealed = floodFill(newBoard, row, col)
-        revealed.forEach(({ row: r, col: c }) => {
-          newBoard[r][c] = { ...newBoard[r][c], isRevealed: true, revealedBy: currentUserId }
-        })
-        // Add flood fill points
-        if (revealed.length > 5) {
-          setPlayers((prev) =>
-            prev.map((p) => (p.id === currentUserId ? { ...p, score: p.score + 30 } : p))
-          )
-        }
-      } else {
-        // Normal reveal
-        newBoard[row][col] = { ...cell, isRevealed: true, revealedBy: currentUserId }
-        setPlayers((prev) =>
-          prev.map((p) => (p.id === currentUserId ? { ...p, score: p.score + 10 } : p))
-        )
-      }
-
-      return newBoard
-    })
-  }, [gameState, firstClick, currentUserId, id, navigate])
-
-  const handleFlag = useCallback((row: number, col: number) => {
-    if (gameState !== 'playing') return
-
-    setBoard((prevBoard: Board) => {
-      const cell = prevBoard[row][col]
-      if (cell.isRevealed) return prevBoard
-
-      const newBoard = prevBoard.map((r: Cell[]) => [...r])
-      newBoard[row][col] = { ...cell, isFlagged: !cell.isFlagged }
-
-      // Check if flag is correct
-      if (!cell.isFlagged && cell.hasMine) {
-        setPlayers((prev) =>
-          prev.map((p) => (p.id === currentUserId ? { ...p, score: p.score + 25 } : p))
-        )
-      } else if (cell.isFlagged && cell.hasMine) {
-        setPlayers((prev) =>
-          prev.map((p) => (p.id === currentUserId ? { ...p, score: p.score - 15 } : p))
-        )
-      } else if (!cell.isFlagged && !cell.hasMine) {
-        setPlayers((prev) =>
-          prev.map((p) => (p.id === currentUserId ? { ...p, score: p.score - 15 } : p))
-        )
-      }
-
-      return newBoard
-    })
-  }, [gameState, currentUserId])
+  const handleFlag = (row: number, col: number) => {
+    flagCell(row, col)
+  }
 
   const handlePing = (type: string) => {
     const pingMessages: Record<string, string> = {
@@ -219,16 +145,8 @@ export function MatchPage() {
       text,
       ts: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
     }
-    setMessages((prev) => [...prev, newMsg])
+    addMessage(newMsg)
   }
-
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60).toString().padStart(2, '0')
-    const s = (seconds % 60).toString().padStart(2, '0')
-    return `${m}:${s}`
-  }
-
-  const minesRemaining = mineCount - flagsPlaced
 
   return (
     <div className="min-h-dvh flex flex-col">
@@ -329,7 +247,7 @@ export function MatchPage() {
             {showChat ? 'Fechar Chat' : 'Abrir Chat'}
           </Button>
 
-          {/* Players Panel (always visible on desktop) */}
+          {/* Players Panel */}
           <div className="p-3 border-b border-border lg:p-4">
             <h3 className="font-heading font-bold text-h6 text-ink mb-3 flex items-center gap-2">
               <svg className="w-5 h-5 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -383,7 +301,9 @@ export function MatchPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-ink-muted">Dificuldade</span>
-                <span className="font-heading font-bold text-ink">Médio (16×16, 40 minas)</span>
+                <span className="font-heading font-bold text-ink">
+                  {boardConfig.rows}×{boardConfig.cols}, {mineCount} minas
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-ink-muted">Sala</span>

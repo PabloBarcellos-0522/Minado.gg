@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
@@ -7,16 +7,8 @@ import { Tabs, TabList, TabTrigger, TabContent } from '@/components/ui/Tabs'
 import { RoomCard } from '@/components/blocks/RoomCard'
 import { ModeGrid, GameModeCard } from '@/components/blocks/GameModeCard'
 import { Navbar } from '@/components/blocks/Navbar'
+import { useRoomStore, type RoomWithName } from '@/store/roomStore'
 import type { GameMode, Difficulty } from '@minado/shared'
-
-const sampleRooms = [
-  { id: 'room-1', name: 'Turbinados', mode: 'competitive' as GameMode, difficulty: 'medium' as Difficulty, playerCount: 3, maxPlayers: 5 },
-  { id: 'room-2', name: 'Amigos Only', mode: 'cooperative' as GameMode, difficulty: 'easy' as Difficulty, playerCount: 2, maxPlayers: 4, isPrivate: true },
-  { id: 'room-3', name: 'Ranked BR', mode: 'battle-royale' as GameMode, difficulty: 'hard' as Difficulty, playerCount: 12, maxPlayers: 20 },
-  { id: 'room-4', name: 'Fog Squad', mode: 'fog-of-war' as GameMode, difficulty: 'expert' as Difficulty, playerCount: 4, maxPlayers: 4 },
-  { id: 'room-5', name: 'Casual Race', mode: 'multi-board' as GameMode, difficulty: 'easy' as Difficulty, playerCount: 1, maxPlayers: 4 },
-  { id: 'room-6', name: 'Pro League', mode: 'competitive' as GameMode, difficulty: 'expert' as Difficulty, playerCount: 8, maxPlayers: 8 },
-]
 
 const modeFilters: { value: GameMode | 'all'; label: string }[] = [
   { value: 'all', label: 'Todos' },
@@ -39,7 +31,13 @@ export function LobbyPage() {
   const [modeFilter, setModeFilter] = useState<GameMode | 'all'>('all')
   const [difficultyFilter, setDifficultyFilter] = useState<Difficulty | 'all'>('all')
 
-  const filteredRooms = sampleRooms.filter((room) => {
+  const rooms = useRoomStore((s) => s.rooms)
+  const fetchRooms = useRoomStore((s) => s.fetchRooms)
+  useEffect(() => {
+    fetchRooms()
+  }, [fetchRooms])
+
+  const filteredRooms = rooms.filter((room: RoomWithName) => {
     if (modeFilter !== 'all' && room.mode !== modeFilter) return false
     if (difficultyFilter !== 'all' && room.difficulty !== difficultyFilter) return false
     return true
@@ -134,7 +132,16 @@ export function LobbyPage() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredRooms.map((room) => (
-                  <RoomCard key={room.id} {...room} />
+                  <RoomCard
+                    key={room.id}
+                    id={room.id}
+                    name={room.name}
+                    mode={room.mode}
+                    difficulty={room.difficulty}
+                    playerCount={room.players.length}
+                    maxPlayers={room.maxPlayers}
+                    isPrivate={room.isPrivate}
+                  />
                 ))}
               </div>
             )}

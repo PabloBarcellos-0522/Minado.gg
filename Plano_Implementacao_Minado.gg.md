@@ -1,208 +1,164 @@
-# Plano de Implementação — Minado.gg
+# Plano de Implementação — Minado.gg (ATUALIZADO)
 
-> Base analisada: `Ideias_Campo_Minado_Multiplayer.md`, `index.html` (design system) e `src/styles/*.css` (tokens.css, components.css, game.css). As pastas `src/components` e `src/blocks` existem mas estão vazias — ou seja, hoje você tem **apenas o design system em HTML/CSS puro**, ainda sem código de aplicação (React/lógica de jogo/backend).
-
----
-
-## 1. Estado atual do projeto
-
-| Item                                                                             | Status                       |
-| -------------------------------------------------------------------------------- | ---------------------------- |
-| Design tokens (cores, espaçamento, tipografia, sombra, raio)                     | ✅ Pronto (`tokens.css`)     |
-| Componentes atômicos em CSS (botão, input, badge, modal, toast, tabs, tabela...) | ✅ Pronto (`components.css`) |
-| Estilos do jogo (tabuleiro, célula, mascote, banners, FX de boom/confete)        | ✅ Pronto (`game.css`)       |
-| Componentes React (`src/components`)                                             | ✅ Pronto (`src/components`) |
-| Blocos compostos (`src/blocks`)                                                  | ❌ Vazio                     |
-| Lógica de jogo (geração de tabuleiro, flood fill, etc.)                          | ❌ Não existe                |
-| Backend / Socket.IO / banco de dados                                             | ❌ Não existe                |
-
-Ou seja: o design system está muito maduro, mas o "esqueleto" da aplicação (rotas, componentes React, estado, lógica de jogo, multiplayer) precisa ser criado do zero. Esse é o foco deste plano.
+> ⚠️ **Revisado em 25/07/2026.** Frontend ~95% completo. Stores Zustand criadas. Servidor com Socket.IO esboçado. **Gargalo: DB + Auth real + sincronia stores/socket.**
 
 ---
 
-## 2. Stack recomendada (confirmando o que já está no seu .md)
+## 1. Estado atual do projeto (REAL)
 
-- **Frontend:** React + TypeScript + Vite + Tailwind ou CSS para auxiliar o Tailwind
+| Item                                                                             | Status |
+| -------------------------------------------------------------------------------- | ------ |
+| Monorepo (npm workspaces: `apps/web`, `apps/server`, `packages/shared`)          | ✅ OK |
+| Design tokens + CSS (Tailwind 4 com `@theme`)                                    | ✅ OK |
+| Componentes atômicos React (Button, Input, Badge, Avatar, Modal, Tabs, etc.)     | ✅ **10 prontos** |
+| Blocos compostos (Navbar, RoomCard, ChatPanel, Leaderboard, ProfileCard, etc.)   | ✅ **8 prontos** |
+| Componentes de jogo (Board, Cell, Mascote, Banner, PingRow, FxBoom, FxConfetti)  | ✅ **7 prontos** |
+| Páginas React Router (12 rotas)                                                  | ✅ **12 prontas** |
+| Lógica de jogo (`packages/shared`)                                               | ✅ **Pronta** |
+| Tema claro/escuro                                                                | ✅ OK |
+| **Zustand stores** (auth, room, game)                                            | ✅ **Criadas** (com fallback mock) |
+| **Servidor Express + Socket.IO** (handlers de sala/jogo)                         | ✅ **Esboçado** (RoomManager, roomHandler, gameHandler) |
+| **Páginas integradas com stores** (Navbar, Login, Lobby, Sala, Partida, Resultado)| ✅ **Integradas** |
+| **`src/styles/` legado na raiz**                                                 | ✅ **Removido** |
+| **Auth real** (JWT + OAuth Google/Discord/GitHub)                                | ❌ Só mock na store |
+| **Banco de dados** (Postgres + Prisma)                                           | ❌ Não configurado |
+| **GameManager server-side** (boards autoritativos, score real)                   | ❌ Síncrono parcial no gameHandler |
+| **Store ↔ Socket sync** (eventos reais substituindo mocks)                       | ❌ Stores usam fallback mock quando socket desconectado |
+
+**Conclusão:** frontend ~95%, servidor esboçado. Próximo ciclo é **infra + backend**: Prisma → Auth → sincronia stores/socket.
+
+---
+
+## 2. Stack (confirmada)
+
+- **Frontend:** React 19 + TypeScript + Vite 6 + Tailwind 4 + React Router 7
+- **Estado global:** Zustand 5
 - **Realtime:** Socket.IO (cliente + servidor)
 - **Backend:** Node.js + Express + Socket.IO
-- **Banco de dados:** PostgreSQL (dados persistentes: usuários, estatísticas, ranking) + Redis (estado de salas em tempo real, filas, pub/sub entre instâncias)
-- **Auth:** OAuth (Google, Discord, GitHub) + fallback e-mail/senha (ex: Lucia Auth ou Auth.js)
-- **Hospedagem:** Vercel (frontend estático) + Railway/Render (servidor Socket.IO, que precisa de conexão persistente) + Supabase/Neon (Postgres gerenciado)
+- **Banco de dados:** PostgreSQL (via Prisma ORM)
+- **Auth:** JWT (local) + OAuth (Google, Discord, GitHub) via Passport.js
+- **Hospedagem:** Vercel (frontend) + Railway/Render (servidor) + Supabase/Neon (Postgres)
 
 ---
 
-## 3. Estrutura de pastas sugerida
+## 3. Estrutura de pastas (atual)
 
 ```
 Minado.gg/
 ├── apps/
-│   ├── web/                      # Frontend React
+│   ├── web/                          # Frontend React
 │   │   ├── src/
-│   │   │   ├── pages/            # Rotas (ver seção 4)
-│   │   │   ├── components/       # Atômicos (Button, Input, Badge, Avatar, Modal...)
-│   │   │   ├── blocks/           # Compostos (RoomCard, Leaderboard, ChatPanel, Roster...)
-│   │   │   ├── game/              # Lógica de jogo (client-side)
-│   │   │   │   ├── board.ts       # Geração, flood fill, tipos
-│   │   │   │   ├── useGame.ts     # Hook de estado de partida
-│   │   │   │   └── fx.ts          # Boom, confete, shake
-│   │   │   ├── net/                # Cliente Socket.IO, eventos tipados
-│   │   │   ├── store/              # Zustand/Redux (estado global: usuário, sala, sessão)
-│   │   │   ├── styles/             # tokens.css, components.css, game.css (mover para cá)
-│   │   │   └── App.tsx / router.tsx
+│   │   │   ├── pages/                # 12 páginas
+│   │   │   ├── components/
+│   │   │   │   ├── ui/               # 10 atômicos
+│   │   │   │   ├── blocks/           # 8 blocos
+│   │   │   │   └── game/             # 7 componentes de jogo
+│   │   │   ├── store/                # Zustand — auth, room, game
+│   │   │   ├── lib/                  # socket.ts (cliente Socket.IO)
+│   │   │   └── styles/               # index.css com Tailwind 4 @theme
 │   │   └── index.html
-│   └── server/                   # Backend
+│   └── server/                       # Backend Express + Socket.IO
 │       ├── src/
-│       │   ├── sockets/           # Handlers de eventos (room, move, chat, ping)
-│       │   ├── game/              # Lógica de jogo (server-side, autoritativa)
-│       │   ├── routes/            # REST (auth, perfil, ranking)
-│       │   ├── db/                # Prisma schema + client
-│       │   └── redis/             # Pub/sub, estado de salas
-│       └── prisma/schema.prisma
+│       │   ├── sockets/              # Handlers: roomHandler, gameHandler
+│       │   ├── game/                 # GameManager (boards server-side)
+│       │   ├── routes/               # REST: auth, profile, ranking
+│       │   ├── middleware/           # JWT middleware
+│       │   ├── db/                   # Prisma schema + client
+│       │   └── rooms/               # RoomManager
+│       ├── prisma/                   # Prisma schema
+│       ├── package.json
+│       └── tsconfig.json
 └── packages/
-    └── shared/                   # Tipos e constantes compartilhados (board, eventos socket, pontuação)
+    └── shared/                       # Tipos e funções puras
 ```
 
-**Ponto crítico de arquitetura:** a lógica do campo minado deve existir em dois lugares com o mesmo contrato de tipos (via `packages/shared`):
+---
 
-- **Servidor** = fonte da verdade (gera o tabuleiro, valida jogadas, calcula pontuação, decide vitória/derrota). Nunca confie no cliente para saber onde estão as minas.
-- **Cliente** = só renderiza o estado recebido e faz previsão otimista de UI (ex: animação de clique antes da confirmação do servidor).
+## 4. Páginas e rotas (TODAS IMPLEMENTADAS)
+
+| Rota                     | Página                           | Status |
+| ------------------------ | -------------------------------- | ------ |
+| `/`                      | Home / Landing                    | ✅ |
+| `/login`                 | Login (com cadastro)              | ✅ |
+| `/lobby`                 | Lobby com filtros, Tabs, salas    | ✅ |
+| `/lobby/criar-sala`      | Criar sala (form completo)        | ✅ |
+| `/sala/:id`              | Sala de espera + roster + chat    | ✅ |
+| `/partida/:id`           | Partida (Board + timer + FX)      | ✅ |
+| `/partida/:id/resultado` | Resultado + scoreboard + histórico | ✅ |
+| `/ranking`               | Ranking (Global/Semanal/Mensal)   | ✅ |
+| `/perfil/:username`      | Perfil do jogador                 | ✅ |
+| `/perfil/editar`         | Configurações de conta            | ✅ |
+| `/styleguide`            | Design system showcase            | ✅ |
+| `*`                      | 404                               | ✅ |
 
 ---
 
-## 4. Páginas e rotas
+## 5. Componentes React — já extraídos
 
-Baseado no fluxo do seu `.md` (Entrar → Login → Lobby → Sala → Partida → Resultado → Ranking → Nova partida) e nos blocos já desenhados no `index.html`.
+**Atômicos (`src/components/ui`)** — 10 componentes: Button, Input, Badge, Avatar, Card, Tabs, Modal, Progress, Skeleton, Alert.
 
-| Rota                     | Página                           | Componentes principais (já existem no design system)                                                                                         |
-| ------------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`                      | **Home / Landing**               | Navbar, hero com mascote, GameModeCard (grid dos 4 modos), CTA "Jogar agora"                                                                 |
-| `/login`                 | **Login**                        | Card, botões OAuth (Google/Discord/GitHub), Input, Alert de erro                                                                             |
-| `/lobby`                 | **Lobby**                        | Navbar, lista de RoomCard (salas públicas), botão "Criar sala", filtros (modo, nº jogadores), Tabs (Salas/Amigos/Ranking)                    |
-| `/lobby/criar-sala`      | **Criar sala** (modal ou página) | Modal, Input (nome), Choice (modo, dificuldade, tabuleiro), Switch (privada/pública)                                                         |
-| `/sala/:id`              | **Sala de espera**               | PlayerRoster, ChatPanel, badge de status "Host/Pronto", botão "Iniciar partida", convite por link                                            |
-| `/partida/:id`           | **Partida (jogo)**               | Board + board-cell, Mascote, ChatPanel colapsável, ping-row (reações rápidas), HUD (timer, contador de minas, pontuação ao vivo por jogador) |
-| `/partida/:id/resultado` | **Resultado**                    | Banner (win/lose), tabela de pontuação final, MatchCard, botão "Revanche" / "Voltar ao lobby"                                                |
-| `/ranking`               | **Ranking**                      | Tabs (Global/Semanal/Mensal), Leaderboard, tabela paginada                                                                                   |
-| `/perfil/:username`      | **Perfil**                       | ProfileCard, stat-pill (vitórias, sequência, patente), histórico de partidas, conquistas                                                     |
-| `/perfil/editar`         | **Configurações de conta**       | Input, avatar upload, personalização (bandeira, cursor, tema do tabuleiro), tema claro/escuro                                                |
-| `/replay/:matchId`       | **Replay** (recurso extra)       | Board em modo "player" com controles de tempo (play/pause/scrub)                                                                             |
-| `*`                      | **404**                          | Mascote "explodido" + mensagem de humor                                                                                                      |
+**Blocos (`src/components/blocks`)** — 8 blocos: Navbar, RoomCard, Leaderboard, ProfileCard, MatchCard, ChatPanel, PlayerRoster, GameModeCard.
 
-Sugestão de prioridade: implemente **Home → Login → Lobby → Sala → Partida → Resultado** primeiro (o "core loop"). Ranking, Perfil, Replay e Configurações vêm depois — são importantes mas não bloqueiam testar o jogo.
+**Jogo (`src/components/game`)** — 7 componentes: Board, Cell, Mascote, Banner, PingRow, FxBoom, FxConfetti.
 
 ---
 
-## 5. Componentes React a extrair do design system
+## 6. Lógica de jogo — implementada em `packages/shared`
 
-Você já tem o CSS pronto; falta encapsular em componentes React tipados. Ordem sugerida:
+### 6.1 Núcleo do Campo Minado ✅
 
-**Atômicos (`src/components`)**
+- `generateBoard(rows, cols, mines, safeRow?, safeCol?)` — geração segura (1º clique nunca mina)
+- `floodFill(board, row, col)` — revelar área vazia (DFS)
+- `checkWin(board)` — todas as células sem mina reveladas
+- `calculateScore(action)` — pontuação por ação
 
-1. `Button` (variants: primary/secondary/accent/ghost/danger, sizes, loading, disabled)
-2. `Input` + `Field` + `Label` + `Helper` (com estado de erro)
-3. `Checkbox` / `Radio` / `Switch` (wrap de `.choice` e `.switch`)
-4. `Badge`
-5. `Avatar` (com fallback de iniciais + variante `bomb`)
-6. `Alert` / `Toast` (Toast precisa de um `ToastProvider` + fila)
-7. `Tooltip`
-8. `Tabs`
-9. `Modal` (wrap de `.modal-scrim` + `.modal`, com foco trap e `Esc` para fechar)
-10. `Table`
-11. `Progress`
-12. `Skeleton`
-
-**Blocos compostos (`src/blocks`)**
-
-1. `Navbar`
-2. `RoomCard`
-3. `Leaderboard`
-4. `ProfileCard`
-5. `MatchCard`
-6. `ChatPanel` (precisa de conexão com socket)
-7. `PlayerRoster`
-8. `GameModeCard` / `ModeGrid`
-
-**Jogo (`src/game` + componentes específicos)**
-
-1. `Board` (grid dinâmico, usa `--board-cols`)
-2. `Cell` (estados: coberta, revelada, número 1–8, mina, bandeira, "segura", cor por jogador)
-3. `Mascote` (happy/exploded, reage ao estado da partida)
-4. `Banner` (win/lose)
-5. `PingRow` (reações rápidas)
-6. `FxBoom` / `FxConfetti` (efeitos, já existem as classes CSS `fx-boom`/`fx-confetti`)
-
-Dica prática: comece migrando o próprio `index.html` (styleguide) para uma rota `/styleguide` dentro do app React — assim você valida que os componentes React renderizam **exatamente igual** ao HTML de referência antes de usá-los nas páginas reais.
-
----
-
-## 6. Lógica de jogo — o que precisa ser implementado
-
-### 6.1 Núcleo do Campo Minado (single board, base para todos os modos)
-
-- **Geração do tabuleiro:** matriz `linhas x colunas`, distribuição aleatória de `N` minas, garantindo que a **primeira jogada nunca seja mina** (gerar minas só depois do primeiro clique, excluindo a célula clicada e vizinhas).
-- **Cálculo de números:** para cada célula sem mina, contar minas nas 8 vizinhas.
-- **Flood fill (revelar área vazia):** ao abrir uma célula com 0 minas vizinhas, revelar recursivamente/BFS todas as vizinhas até encontrar bordas com número.
-- **Marcar bandeira / interrogação:** clique direito (ou long-press no mobile) alterna coberta → bandeira → interrogação → coberta.
-- **Condição de vitória:** todas as células sem mina reveladas.
-- **Condição de derrota:** célula com mina revelada (no modo cooperativo, derrota é coletiva).
-- **Timer e contador de minas restantes** (minas totais − bandeiras colocadas).
-
-### 6.2 Lógica específica multiplayer (por modo — do seu `.md`)
+### 6.2 Lógica específica multiplayer (pendente de implementação no servidor)
 
 **Competitivo (mesmo tabuleiro):**
-
-- Todos os jogadores recebem o **mesmo tabuleiro gerado no servidor**.
-- Cada célula revelada guarda `revealedBy: playerId` → usada para colorir a célula com a cor do jogador.
-- Pontuação incremental por jogador (ver tabela da seção 7), calculada **no servidor** a cada jogada.
-- Ao explodir: aplica penalidade, mas o jogador continua na partida (não é eliminado).
-- Fim de partida: tabuleiro 100% revelado (por qualquer combinação de jogadores) ou tempo esgotado → maior pontuação vence.
+- Todos recebem mesmo tabuleiro gerado no servidor
+- Célula revelada guarda `revealedBy: playerId` → cor do jogador
+- Pontuação calculada no servidor a cada jogada
+- Ao explodir: penalidade, mas continua
+- Fim: tabuleiro 100% revelado ou tempo esgotado
 
 **Vários tabuleiros (corrida):**
-
-- Cada jogador recebe seu **próprio tabuleiro independente** (mesma seed de dificuldade, minas diferentes por jogador ou mesma seed — decidir).
-- Ao explodir: penalidade de tempo (3–5s de "congelamento" da UI, sem poder interagir).
-- Vitória: primeiro a limpar o próprio tabuleiro corretamente.
-- Precisa de um "espectador" simples mostrando o progresso (%) dos outros jogadores em tempo real, sem mostrar o tabuleiro deles (evita trapaça).
+- Cada jogador com tabuleiro independente (mesma seed de dificuldade)
+- Explodir → penalidade de tempo (3-5s congelado)
+- Vitória: primeiro a limpar o próprio tabuleiro
 
 **Cooperativo:**
-
-- Um único tabuleiro compartilhado, qualquer jogador pode clicar em qualquer célula.
-- Contador de erros **compartilhado** (ex: "vidas" do time) — X erros = derrota geral.
-- Dificuldade aumenta por fase/rodada (tabuleiro maior ou mais minas a cada rodada vencida).
-- Chat + sistema de ping (usar `ping-row` do design system) para coordenar sem microfone.
+- Tabuleiro compartilhado, qualquer um pode clicar
+- Contador de erros compartilhado
+- Dificuldade aumenta por fase/rodada
 
 **Battle Royale:**
+- Muitos jogadores, tabuleiros menores por rodada
+- Ao explodir → eliminado (vira espectador)
+- Servidor reduz tamanho / aumenta densidade a cada rodada
+- Último não eliminado vence
 
-- Muitos jogadores, tabuleiros menores por rodada.
-- Ao explodir → jogador é **eliminado** (estado `eliminated: true`, não pode mais jogar, vira espectador).
-- Servidor reduz o tamanho do tabuleiro / aumenta densidade de minas a cada rodada.
-- Fim: último jogador não eliminado vence.
+**Fog of War:**
+- Cada jogador tem janela de visão (raio N ao redor do último clique)
+- Células fora da visão aparecem como neblina
+- Servidor envia visões parciais diferentes para cada socket
 
-**Fog of War (diferencial do seu `.md`):**
+### 6.3 Lógica de sala ✅ (parcial)
 
-- Cada jogador tem uma "janela de visão" (ex: raio de N células ao redor da última célula revelada por ele, ou por qualquer membro do time — decidir).
-- Células fora da visão do jogador aparecem como neblina (usar sombreamento adicional sobre `board-cell`).
-- Cooperativo por natureza: "1 erro e todos perdem" → contador de erros compartilhado = 0 tolerância.
-- Tecnicamente é a lógica mais cara: o servidor precisa mandar **visões parciais e diferentes do tabuleiro para cada socket**, não o tabuleiro inteiro (senão dá pra "inspecionar" o payload no DevTools e trapacear vendo o tabuleiro completo).
+- Criar sala: gera `roomId` curto ✅ (RoomManager + roomHandler)
+- Entrar/sair de sala ✅
+- Ready/Start ✅ (validação server-side)
+- Reconexão: manter slot por X segundos 🔴 pendente
 
-### 6.3 Lógica de sala / lobby
+### 6.4 Anti-trapaça 🔴 pendente
 
-- Criar sala: gera `roomId` curto (ex: 6 caracteres), define modo, dificuldade, pública/privada, senha opcional, máx. jogadores.
-- Entrar em sala: por lista pública, por link de convite (`/sala/:id`), ou por código.
-- Estado do jogador na sala: `waiting`, `ready`, `playing`, `spectating`.
-- Host pode iniciar partida quando o mínimo de jogadores estiver pronto (regra por modo, ex: mín. 2 para competitivo).
-- Reconexão: se o jogador cair, manter o slot por X segundos (ex: 30s) antes de liberar a vaga — evita perder a partida por queda de wifi.
-
-### 6.4 Anti-trapaça (mencionado no seu `.md`)
-
-- Nunca enviar posição das minas ao cliente antes de reveladas.
-- Validar toda jogada no servidor (célula existe? já revelada? jogador ainda ativo? dentro do tempo da partida?).
-- Rate limit de eventos socket por jogador (evita spam de cliques/flood de eventos).
-- Em Fog of War, mandar apenas o recorte visível — nunca o tabuleiro completo.
+- Nunca enviar posição das minas ao cliente
+- Validar toda jogada no servidor
+- Rate limit de eventos socket por jogador
+- Fog of War: mandar apenas recorte visível
 
 ---
 
-## 7. Sistema de pontuação (do seu `.md`, para referência na implementação)
+## 7. Sistema de pontuação (implementado em `packages/shared`)
 
 | Ação                      | Pontos |
 | ------------------------- | ------ |
@@ -213,25 +169,105 @@ Dica prática: comece migrando o próprio `index.html` (styleguide) para uma rot
 | Explodir                  | −50    |
 | Vitória                   | +200   |
 
-Implementar como função pura `calculateScore(action, context)` em `packages/shared`, usada só pelo servidor (fonte da verdade), e espelhada no cliente apenas para exibir prévia otimista.
+---
+
+## 8. Modelo de dados (Postgres, via Prisma)
+
+```prisma
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  email     String   @unique
+  avatarUrl String?
+  password  String?                     // null para OAuth-only
+  xp        Int      @default(0)
+  level     Int      @default(1)
+  createdAt DateTime @default(now())
+
+  accounts      Account[]
+  matches       MatchPlayer[]
+  stats         Stats?
+  achievements  UserAchievement[]
+}
+
+model Account {
+  id              String  @id @default(cuid())
+  userId          String
+  provider        String  // "google" | "discord" | "github"
+  providerId      String  // id do usuário no provider
+  accessToken     String?
+  refreshToken    String?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([provider, providerId])
+}
+
+model Stats {
+  id            String @id @default(cuid())
+  userId        String @unique
+  victories     Int    @default(0)
+  defeats       Int    @default(0)
+  matchesPlayed Int    @default(0)
+  currentStreak Int    @default(0)
+  maxStreak     Int    @default(0)
+  rank          Int    @default(0)
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Match {
+  id         String   @id @default(cuid())
+  mode       String   // GameMode
+  boardRows  Int
+  boardCols  Int
+  mineCount  Int
+  status     String   // "playing" | "finished"
+  startedAt  DateTime @default(now())
+  endedAt    DateTime?
+
+  players MatchPlayer[]
+}
+
+model MatchPlayer {
+  id        String @id @default(cuid())
+  matchId   String
+  userId    String
+  score     Int    @default(0)
+  exploded  Boolean @default(false)
+  rank      Int?
+  actions   Json?  // log de ações
+
+  match Match @relation(fields: [matchId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@unique([matchId, userId])
+}
+
+model Achievement {
+  id          String @id @default(cuid())
+  title       String
+  description String
+  condition   String // JSON com condição
+}
+
+model UserAchievement {
+  userId        String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id])
+  achievement Achievement @relation(fields: [achievementId], references: [id])
+
+  @@id([userId, achievementId])
+}
+```
+
+> Estado **efêmero** de partidas em andamento (tabuleiros, células reveladas, timers) fica em **memória** (GameManager), não no Postgres. Só persiste o resumo final para ranking/histórico.
 
 ---
 
-## 8. Modelo de dados (Postgres, via Prisma) — visão inicial
-
-- **User**: id, username, email, avatarUrl, provider (google/discord/github/local), xp, level, createdAt
-- **Stats**: userId, vitórias, derrotas, partidas jogadas, sequência atual, sequência máxima, patente
-- **Match**: id, mode, boardConfig (linhas/colunas/minas), status, startedAt, endedAt
-- **MatchPlayer**: matchId, userId, score, exploded (bool), rank final, ações (log para replay)
-- **Room**: id (curto), hostId, mode, isPrivate, passwordHash?, maxPlayers, status
-- **Achievement**: id, título, descrição, condição
-- **UserAchievement**: userId, achievementId, unlockedAt
-
-Estado **efêmero** de partida em andamento (tabuleiro, células reveladas, timers) fica em **Redis**, não no Postgres — só persiste no Postgres o resumo final (para ranking/histórico/replay).
-
----
-
-## 9. Eventos Socket.IO — contrato inicial
+## 9. Eventos Socket.IO — contrato
 
 **Cliente → Servidor**
 
@@ -246,71 +282,78 @@ Estado **efêmero** de partida em andamento (tabuleiro, células reveladas, time
 
 **Servidor → Cliente**
 
-- `room:state` (snapshot completo da sala: jogadores, status, config)
+- `room:list` (salas públicas)
+- `room:state` (snapshot completo da sala)
 - `room:playerJoined` / `room:playerLeft`
-- `game:started` `{ boardMeta }` (linhas, colunas, nº minas — nunca as posições)
-- `game:cellRevealed` `{ cellId, value, revealedBy }` (ou lote, para flood fill)
-- `game:cellFlagged` `{ cellId, playerId }`
+- `game:started` `{ boardMeta }` — só linhas/colunas/minas, nunca posições
+- `game:cellRevealed` `{ cellId, value, revealedBy }` (ou batch para flood fill)
+- `game:cellFlagged` `{ cellId, playerId, flagged }`
 - `game:scoreUpdate` `{ playerId, delta, total }`
-- `game:playerEliminated` `{ playerId }` (battle royale)
+- `game:playerEliminated` `{ playerId }`
 - `game:ended` `{ result, scoreboard }`
 - `chat:message` `{ from, text, ts }`
 - `error` `{ code, message }`
 
 ---
 
-## 10. Roadmap sugerido (fases)
+## 10. Roadmap
 
-**Fase 0 — Fundação (1–2 semanas)**
+**Fase 0 — Fundação ✅ COMPLETA**
 
-- Setup do monorepo (`apps/web`, `apps/server`, `packages/shared`)
-- Migrar tokens/CSS para dentro do `web`
-- Montar roteador (React Router) com as páginas da seção 4 como stubs vazios
-- Extrair 5–6 componentes atômicos mais usados (Button, Input, Badge, Avatar, Modal)
+Setup monorepo, Tailwind 4, roteador, componentes, páginas, lógica de jogo em `packages/shared`.
 
-**Fase 1 — Jogo single-player local (2–3 semanas)**
+**Fase 1 — Jogo single-player ✅ COMPLETA**
 
-- Implementar lógica pura do campo minado (`board.ts`: gerar, revelar, flood fill, flag, vitória/derrota) 100% no cliente, sem rede ainda
-- Montar `Board`/`Cell`/`Mascote`/`Banner` reais consumindo essa lógica
-- Validar UX de clique, flood fill, timer, contador de minas
+Board, Cell, flood fill, geração segura, scoring, timer, vitória/derrota, FX.
 
-**Fase 2 — Backend + multiplayer básico (3–4 semanas)**
+**Fase 2 — Backend + multiplayer 🟡 EM ANDAMENTO**
 
-- Servidor Express + Socket.IO, lógica de jogo movida para o servidor (autoritativa)
-- Salas (criar/entrar/lobby/roster) — modo Competitivo primeiro (é o mais simples de sincronizar: 1 tabuleiro, 1 evento por jogada)
-- Persistência básica em Postgres (User, Match, MatchPlayer) e auth (ao menos login por conta própria, OAuth depois)
+| Sub-fase | Status |
+|----------|--------|
+| 2.1 Stores Zustand (auth, room, game) | ✅ Concluído |
+| 2.2 Servidor Express + Socket.IO + handlers | ✅ Concluído |
+| 2.3 Páginas integradas com stores | ✅ Concluído |
+| 2.4 Limpeza `src/styles/` legado | ✅ Concluído |
+| 2.5 **Banco de dados (Postgres + Prisma)** | 🔴 **Pendente** |
+| 2.6 **Auth real (JWT + OAuth)** | 🔴 **Pendente** |
+| 2.7 **Sincronia stores ↔ socket real** | 🔴 **Pendente** |
 
-**Fase 3 — Mais modos (3–5 semanas)**
+**Fase 3 — Mais modos (após Fase 2)**
 
 - Vários tabuleiros (corrida)
-- Cooperativo (contador de erros compartilhado, dificuldade crescente)
+- Cooperativo (erros compartilhados, fases)
 - Battle Royale (eliminação, rodadas)
-- Fog of War por último (é o mais complexo — visão parcial por jogador)
+- Fog of War (visão parcial)
 
-**Fase 4 — Social e retenção (contínuo)**
+**Fase 4 — Social e retenção**
 
-- Ranking global/semanal/mensal, perfil, conquistas, missões diárias
-- Chat completo + pings, convites por link, notificações
+- Ranking global/semanal/mensal, perfil, conquistas, missões
+- Chat completo + pings, convites por link
 - Replay de partidas, histórico
-- Personalização (bandeiras, cursor, tema do tabuleiro), modo escuro (o toggle já existe no `index.html`, só falta persistir a preferência)
+- Personalização (bandeiras, cursor, tema)
 
 **Fase 5 — Polimento**
 
-- Anti-trapaça (rate limit, validação server-side revisada)
-- Performance (lazy loading de rotas, otimizar re-render do `Board` em tabuleiros grandes)
-- Acessibilidade (contraste, navegação por teclado no tabuleiro, `prefers-reduced-motion` — já referenciado no CSS)
-- Testes (lógica de jogo com testes unitários é prioridade — é a parte que não pode ter bug)
+- Anti-trapaça (rate limit, validação server-side)
+- Performance (lazy loading, otimizar Board)
+- Acessibilidade (`prefers-reduced-motion`, contraste, teclado)
+- Testes unitários da lógica de jogo
 
 ---
 
-## 11. Próximos passos imediatos (o que fazer nesta semana)
+## 11. Próximos passos imediatos
 
-1. Decidir: monorepo (`apps/web` + `apps/server`) ou dois repositórios separados.
-2. Rodar `npm create vite@latest apps/web -- --template react-ts` e mover `tokens.css`, `components.css`, `game.css` para `apps/web/src/styles`.
-3. Criar `packages/shared/src/board.ts` com os tipos `Cell`, `Board`, `GameMode` e as funções puras de geração/flood fill — isso desbloqueia tanto o protótipo client-only (Fase 1) quanto o servidor depois.
-4. Extrair `Button`, `Input` e `Badge` como primeiros componentes React, comparando visualmente com o `index.html` atual.
-5. Criar a rota `/partida-local` (sem rede) só para validar a lógica do tabuleiro rodando em React antes de entrar em multiplayer.
-
----
-
-Se quiser, posso já começar a gerar código real (ex: `board.ts` com a lógica pura do campo minado, ou os primeiros componentes React) — é só me dizer por onde prefere começar.
+1. ✅ Setup monorepo
+2. ✅ App Vite
+3. ✅ Lógica de jogo (`packages/shared`)
+4. ✅ Componentes React (30+)
+5. ✅ Páginas (12 rotas)
+6. ✅ Stores Zustand (auth, room, game)
+7. ✅ Servidor Express + Socket.IO
+8. ✅ Páginas integradas com stores
+9. ✅ Limpeza `src/styles/` legado
+10. 🔴 **Prisma: instalar, schema, migrate**
+11. 🔴 **Auth: rotas REST (register, login, oauth) + middleware JWT**
+12. 🔴 **Frontend: authStore → chamadas HTTP reais + socket com token**
+13. 🔴 **Server: GameManager (boards server-side autoritativos)**
+14. 🔴 **Stores: roomStore + gameStore sincronizadas com socket real**

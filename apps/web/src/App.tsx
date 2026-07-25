@@ -13,6 +13,9 @@ import { RankingPage } from "./pages/RankingPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { EditProfilePage } from "./pages/EditProfilePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { useAuthStore } from "./store/authStore";
+import { useGameStore } from "./store/gameStore";
+import { connectSocket, disconnectSocket } from "./lib/socket";
 
 function ScrollToTop() {
   const { pathname, hash } = useLocation();
@@ -30,9 +33,28 @@ function ScrollToTop() {
   return null;
 }
 
+function SocketManager() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const initSocketListeners = useGameStore((s) => s.initSocketListeners)
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      connectSocket()
+      const cleanup = initSocketListeners()
+      return () => {
+        cleanup()
+        disconnectSocket()
+      }
+    }
+  }, [isAuthenticated, initSocketListeners])
+
+  return null
+}
+
 function App() {
   return (
     <ThemeProvider>
+      <SocketManager />
       <div className="min-h-dvh flex flex-col">
         <ScrollToTop />
         <Routes>

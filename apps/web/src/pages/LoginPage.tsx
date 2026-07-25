@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'
+import { useAuthStore } from '@/store/authStore'
 
 const oauthProviders = [
   {
@@ -55,43 +56,55 @@ export function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const redirect = searchParams.get('redirect') || '/lobby'
+  const login = useAuthStore((s) => s.login)
+  const register = useAuthStore((s) => s.register)
+  const loginWithOAuth = useAuthStore((s) => s.loginWithOAuth)
+  const loading = useAuthStore((s) => s.isLoading)
 
   const [isLogin, setIsLogin] = useState(true)
+  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
 
-  const handleOAuthLogin = (provider: string) => {
-    // In production: redirect to OAuth provider
-    // window.location.href = `/api/auth/${provider}?redirect=${redirect}`
-    setError(`Login com ${provider} será implementado no backend.`)
+  const handleOAuthLogin = async (provider: string) => {
+    setError('')
+    try {
+      await loginWithOAuth(provider as 'google' | 'discord' | 'github', '')
+    } catch {
+      setError(`Erro ao conectar com ${provider}. Tente novamente.`)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    setLoading(true)
-
-    // Simulate auth delay
-    await new Promise((r) => setTimeout(r, 1000))
 
     if (!isLogin && password !== confirmPassword) {
       setError('As senhas não coincidem')
-      setLoading(false)
       return
     }
 
     if (!email || !password) {
       setError('Preencha todos os campos')
-      setLoading(false)
       return
     }
 
-    // Simulate successful login
-    localStorage.setItem('minado_user', JSON.stringify({ username: email.split('@')[0], email }))
-    navigate(redirect, { replace: true })
+    try {
+      if (isLogin) {
+        await login(email, password)
+      } else {
+        if (!username) {
+          setError('Preencha o nome de usuário')
+          return
+        }
+        await register(username, email, password)
+      }
+      navigate(redirect, { replace: true })
+    } catch {
+      setError('Erro ao autenticar. Tente novamente.')
+    }
   }
 
   const toggleMode = () => {
@@ -169,6 +182,21 @@ export function LoginPage() {
 
             {!isLogin && (
               <div>
+                <Label htmlFor="username">Nome de usuário</Label>
+                <Input
+                  id="username"
+                  placeholder="Seu nome de jogador"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  maxLength={20}
+                  required
+                  disabled={loading}
+                />
+              </div>
+            )}
+
+            {!isLogin && (
+              <div>
                 <Label htmlFor="confirmPassword">Confirmar senha</Label>
                 <Input
                   id="confirmPassword"
@@ -182,8 +210,6 @@ export function LoginPage() {
                 />
               </div>
             )}
-
-            {error && <Alert variant="error" className="mb-2">{error}</Alert>}
 
             <Button type="submit" variant="primary" className="w-full" size="md" loading={loading}>
               {isLogin ? 'Entrar' : 'Criar conta'}
@@ -202,12 +228,7 @@ export function LoginPage() {
             </button>
           </p>
 
-          {/* Demo notice */}
-          <div className="mt-6 p-3 rounded-[14px] bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-800">
-            <p className="text-small text-primary-700 dark:text-primary-300 text-center">
-              <strong>Demo:</strong> Qualquer e-mail/senha funciona. Backend de auth (OAuth + JWT) será implementado na Fase 2.
-            </p>
-          </div>
+          {error && <Alert variant="error" className="mb-2">{error}</Alert>}
         </CardContent>
       </Card>
     </div>

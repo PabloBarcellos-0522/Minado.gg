@@ -2,14 +2,18 @@ import { Link } from 'react-router-dom'
 import { useTheme } from '@/components/useTheme'
 import { Button } from '@/components/ui/Button'
 import { Avatar } from '@/components/ui/Avatar'
+import { useAuthStore } from '@/store/authStore'
 
 interface NavbarProps {
   username?: string
   avatarUrl?: string
 }
 
-export function Navbar({ username, avatarUrl }: NavbarProps) {
+export function Navbar({ username: propUsername, avatarUrl: propAvatar }: NavbarProps) {
   const { theme, toggleTheme } = useTheme()
+  const authUser = useAuthStore((s) => s.user)
+  const username = propUsername || authUser?.username
+  const avatarUrl = propAvatar || authUser?.avatarUrl
 
   return (
     <header className="sticky top-0 z-40 flex items-center justify-between gap-4 px-5 py-4 bg-surface border-b border-border shadow-sm">

@@ -9,7 +9,9 @@ import { PlayerRoster } from '@/components/blocks/PlayerRoster'
 import { ChatPanel } from '@/components/blocks/ChatPanel'
 import { Navbar } from '@/components/blocks/Navbar'
 import { Mascote } from '@/components/game/Mascote'
-import type { Room, GameMode, Difficulty } from '@minado/shared'
+import { useRoomStore } from '@/store/roomStore'
+import { useAuthStore } from '@/store/authStore'
+import type { GameMode, Difficulty } from '@minado/shared'
 
 const modeLabels: Record<GameMode, string> = {
   competitive: 'Competitivo',
@@ -34,60 +36,55 @@ const modeColors: Record<GameMode, 'primary' | 'secondary' | 'accent' | 'success
   'fog-of-war': 'warning',
 }
 
-const difficultyConfigs: Record<Difficulty, { rows: number; cols: number; mines: number }> = {
-  easy: { rows: 9, cols: 9, mines: 10 },
-  medium: { rows: 16, cols: 16, mines: 40 },
-  hard: { rows: 16, cols: 30, mines: 99 },
-  expert: { rows: 24, cols: 30, mines: 150 },
-}
-
-// Mock data - in real app this would come from socket
-const mockRoom: Room = {
-  id: 'ABC123',
-  hostId: '1',
-  mode: 'competitive',
-  isPrivate: false,
-  maxPlayers: 6,
-  status: 'waiting',
-  players: [
-    { id: '1', username: 'Pablo', score: 0, isReady: true, isHost: true },
-    { id: '2', username: 'Ana', score: 0, isReady: true, isHost: false },
-    { id: '3', username: 'Carlos', score: 0, isReady: false, isHost: false },
-  ],
-  boardConfig: difficultyConfigs.medium,
-  difficulty: 'medium',
-}
-
-const mockMessages = [
-  { id: '1', from: 'Sistema', text: 'Sala criada por Pablo', ts: '14:30', isSystem: true },
-  { id: '2', from: 'Ana', text: 'Oi pessoal!', ts: '14:31' },
-  { id: '3', from: 'Carlos', text: 'Vamos jogar!', ts: '14:32' },
-]
-
 export function RoomPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [room, setRoom] = useState<Room>(mockRoom)
-  const [messages, setMessages] = useState(mockMessages)
+
+  const room = useRoomStore((s) => s.currentRoom)
+  const joinRoom = useRoomStore((s) => s.joinRoom)
+  const leaveRoom = useRoomStore((s) => s.leaveRoom)
+  const toggleReady = useRoomStore((s) => s.toggleReady)
+  const startGame = useRoomStore((s) => s.startGame)
+  const initSocketListeners = useRoomStore((s) => s.initSocketListeners)
+  const user = useAuthStore((s) => s.user)
+
+  const [messages, setMessages] = useState<Array<{ id: string; from: string; text: string; ts: string; isSystem?: boolean }>>([])
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [inviteLink, setInviteLink] = useState('')
-  const [currentUserId] = useState('1') // In real app, from auth context
+  const currentUserId = user?.id || '1'
   const [countdown, setCountdown] = useState<number | null>(null)
 
-  const isHost = room.hostId === currentUserId
-  const currentPlayer = room.players.find((p) => p.id === currentUserId)
-  const allReady = room.players.length >= 2 && room.players.every((p) => p.isReady)
-  const canStart = isHost && allReady && room.status === 'waiting'
+  useEffect(() => {
+    if (id) {
+      joinRoom(id)
+    }
+    const cleanup = initSocketListeners()
+    return () => {
+      cleanup()
+      leaveRoom()
+    }
+  }, [id])
 
-  // Generate invite link
   useEffect(() => {
     if (id) {
       setInviteLink(`${window.location.origin}/sala/${id}`)
     }
   }, [id])
 
-  // Countdown when all ready
+  const currentPlayer = room?.players.find((p) => p.id === currentUserId)
+  const isHost = room?.hostId === currentUserId
+  const allReady = (room?.players.length ?? 0) >= 2 && (room?.players.every((p) => p.isReady) ?? false)
+  const canStart = isHost && allReady && room?.status === 'waiting'
+
+  const handleStartGame = () => {
+    startGame()
+    setTimeout(() => navigate(`/partida/${id}`), 500)
+  }
+
   useEffect(() => {
+    if (!room) return
+    const allReady = room.players.length >= 2 && room.players.every((p) => p.isReady)
+    const isHost = room.hostId === currentUserId
     if (allReady && room.players.length >= 2) {
       let count = 5
       setCountdown(count)
@@ -96,7 +93,9 @@ export function RoomPage() {
         if (count <= 0) {
           clearInterval(interval)
           setCountdown(null)
-          if (isHost) handleStartGame()
+          if (isHost) {
+            handleStartGame()
+          }
         } else {
           setCountdown(count)
         }
@@ -105,22 +104,7 @@ export function RoomPage() {
     } else {
       setCountdown(null)
     }
-  }, [allReady, room.players.length, isHost])
-
-  const toggleReady = () => {
-    setRoom((prev) => ({
-      ...prev,
-      players: prev.players.map((p) =>
-        p.id === currentUserId ? { ...p, isReady: !p.isReady } : p
-      ),
-    }))
-  }
-
-  const handleStartGame = () => {
-    // In real app: emit socket event
-    setRoom((prev) => ({ ...prev, status: 'playing' }))
-    setTimeout(() => navigate(`/partida/${room.id}`), 500)
-  }
+  }, [room])
 
   const handleSendMessage = (text: string) => {
     const newMsg = {
@@ -134,7 +118,21 @@ export function RoomPage() {
 
   const copyInviteLink = async () => {
     await navigator.clipboard.writeText(inviteLink)
-    // Could show toast here
+  }
+
+  const currentRoom = room
+  if (!currentRoom) {
+    return (
+      <div className="min-h-dvh flex flex-col">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center p-5">
+          <div className="text-center">
+            <div className="w-12 h-12 rounded-full bg-surface-muted border border-border mx-auto mb-4 animate-pulse" />
+            <p className="font-heading font-bold text-h5 text-ink-muted">Entrando na sala...</p>
+          </div>
+        </main>
+      </div>
+    )
   }
 
   return (
@@ -149,11 +147,11 @@ export function RoomPage() {
               <Mascote state="happy" size={40} />
             </div>
             <div>
-              <h1 className="font-heading font-extra text-h2 text-ink">Sala {room.id}</h1>
+              <h1 className="font-heading font-extra text-h2 text-ink">Sala {currentRoom.id}</h1>
               <div className="flex items-center gap-3 mt-1">
-                <Badge variant={modeColors[room.mode]}>{modeLabels[room.mode]}</Badge>
-                <span className="text-small text-ink-muted">{difficultyLabels[room.difficulty]}</span>
-                {room.isPrivate && <Badge variant="secondary">Privada</Badge>}
+                <Badge variant={modeColors[currentRoom.mode]}>{modeLabels[currentRoom.mode]}</Badge>
+                <span className="text-small text-ink-muted">{difficultyLabels[currentRoom.difficulty]}</span>
+                {currentRoom.isPrivate && <Badge variant="secondary">Privada</Badge>}
                 {countdown !== null && (
                   <Badge variant="warning" className="animate-pulse">
                     Iniciando em {countdown}s...
@@ -180,7 +178,7 @@ export function RoomPage() {
               </Button>
             )}
             {canStart && (
-              <Button variant="primary" size="sm" onClick={handleStartGame} loading={room.status === 'playing'}>
+              <Button variant="primary" size="sm" onClick={handleStartGame} loading={currentRoom.status === 'playing'}>
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -204,32 +202,32 @@ export function RoomPage() {
                   <div>
                     <span className="text-ink-muted block mb-1">Tabuleiro</span>
                     <span className="font-heading font-bold text-ink">
-                      {room.boardConfig.rows}×{room.boardConfig.cols}
+                      {currentRoom.boardConfig.rows}×{currentRoom.boardConfig.cols}
                     </span>
                   </div>
                   <div>
                     <span className="text-ink-muted block mb-1">Minas</span>
-                    <span className="font-heading font-bold text-ink">{room.boardConfig.mines}</span>
+                    <span className="font-heading font-bold text-ink">{currentRoom.boardConfig.mines}</span>
                   </div>
                   <div>
                     <span className="text-ink-muted block mb-1">Densidade</span>
                     <span className="font-heading font-bold text-ink">
-                      {((room.boardConfig.mines / (room.boardConfig.rows * room.boardConfig.cols)) * 100).toFixed(1)}%
+                      {((currentRoom.boardConfig.mines / (currentRoom.boardConfig.rows * currentRoom.boardConfig.cols)) * 100).toFixed(1)}%
                     </span>
                   </div>
                   <div>
                     <span className="text-ink-muted block mb-1">Máx. Jogadores</span>
-                    <span className="font-heading font-bold text-ink">{room.maxPlayers}</span>
+                    <span className="font-heading font-bold text-ink">{currentRoom.maxPlayers}</span>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
             {/* Player Roster */}
-            <PlayerRoster players={room.players} currentUserId={currentUserId} />
+            <PlayerRoster players={currentRoom.players} currentUserId={currentUserId} />
 
             {/* Ready Toggle (for non-host) */}
-            {!isHost && room.status === 'waiting' && (
+            {!isHost && currentRoom.status === 'waiting' && (
               <Card>
                 <CardContent className="py-2">
                   <Button
@@ -276,10 +274,10 @@ export function RoomPage() {
               <CardContent className="py-6">
                 <Mascote state="happy" size={100} className="mx-auto mb-4" />
                 <h3 className="font-heading font-bold text-h5 text-ink mb-1">
-                  {room.status === 'waiting' ? 'Aguardando jogadores...' : 'Preparando partida!'}
+                  {currentRoom.status === 'waiting' ? 'Aguardando jogadores...' : 'Preparando partida!'}
                 </h3>
                 <p className="text-ink-muted text-body">
-                  {room.status === 'waiting'
+                  {currentRoom.status === 'waiting'
                     ? 'Converse com o time, marque como pronto e prepare-se para o BOOM!'
                     : 'O tabuleiro está sendo gerado...'}
                 </p>
@@ -359,7 +357,7 @@ export function RoomPage() {
           <div>
             <label className="font-heading font-bold text-small text-ink mb-2 block">Código da Sala</label>
             <div className="p-4 rounded-[14px] bg-surface-muted border border-border text-center">
-              <span className="font-heading font-extra text-h3 text-primary-600 tracking-widest">{room.id}</span>
+              <span className="font-heading font-extra text-h3 text-primary-600 tracking-widest">{currentRoom.id}</span>
               <p className="text-small text-ink-muted mt-1">Digite no lobby: "Entrar por código"</p>
             </div>
           </div>
