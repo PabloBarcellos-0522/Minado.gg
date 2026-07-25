@@ -85,4 +85,23 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
   })
 })
 
+router.put('/me', authMiddleware, async (req: Request, res: Response) => {
+  const { email, password, avatarUrl } = req.body as { email?: string; password?: string; avatarUrl?: string }
+  const data: Record<string, string> = {}
+  if (email !== undefined) data.email = email
+  if (password !== undefined) data.password = await bcrypt.hash(password, 10)
+  if (avatarUrl !== undefined) data.avatarUrl = avatarUrl
+
+  if (Object.keys(data).length === 0) {
+    res.status(400).json({ error: 'Nenhum campo para atualizar' })
+    return
+  }
+
+  const user = await prisma.user.update({
+    where: { id: req.user!.userId },
+    data,
+  })
+  res.json({ id: user.id, username: user.username, email: user.email, avatarUrl: user.avatarUrl })
+})
+
 export default router

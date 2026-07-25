@@ -15,6 +15,7 @@ import { EditProfilePage } from "./pages/EditProfilePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { useAuthStore } from "./store/authStore";
 import { useGameStore } from "./store/gameStore";
+import { useRoomStore } from "./store/roomStore";
 import { connectSocket, disconnectSocket } from "./lib/socket";
 
 function ScrollToTop() {
@@ -35,18 +36,23 @@ function ScrollToTop() {
 
 function SocketManager() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  const initSocketListeners = useGameStore((s) => s.initSocketListeners)
+  const gameListenerInit = useGameStore((s) => s.initSocketListeners)
+  const roomListenerInit = useRoomStore((s) => s.initSocketListeners)
 
   useEffect(() => {
     if (isAuthenticated) {
       connectSocket()
-      const cleanup = initSocketListeners()
+      const cleanup1 = gameListenerInit()
+      const cleanup2 = roomListenerInit()
+      const auth = useAuthStore.getState()
+      auth.fetchMe()
       return () => {
-        cleanup()
+        cleanup1()
+        cleanup2()
         disconnectSocket()
       }
     }
-  }, [isAuthenticated, initSocketListeners])
+  }, [isAuthenticated, gameListenerInit, roomListenerInit])
 
   return null
 }

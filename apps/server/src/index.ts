@@ -1,12 +1,15 @@
 import 'dotenv/config'
 import express from 'express'
+import cors from 'cors'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import { setupRoomHandlers } from './sockets/roomHandler.js'
 import { setupGameHandlers } from './sockets/gameHandler.js'
+import { GameManager } from './game/GameManager.js'
 import { RoomManager } from './rooms/RoomManager.js'
 import authRoutes from './routes/auth.js'
 import oauthRoutes from './routes/oauth.js'
+import usersRoutes from './routes/users.js'
 import { verifyToken } from './middleware/auth.js'
 import type { Socket } from 'socket.io'
 
@@ -22,12 +25,24 @@ const io = new Server(httpServer, {
   },
 })
 
+const gameManager = new GameManager()
 const roomManager = new RoomManager()
 
+roomManager.onPlayerRemoved = (roomId, playerId, playerUsername) => {
+  gameManager.removePlayerBoard(roomId, playerId)
+  io.to(roomId).emit('room:playerLeft', { playerId })
+  const room = roomManager.getRoom(roomId)
+  if (room && room.status === 'playing') {
+    io.to(roomId).emit('game:playerRemoved', { playerId, username: playerUsername })
+  }
+}
+
+app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }))
 app.use(express.json())
 
 app.use('/api/auth', authRoutes)
 app.use('/api/auth', oauthRoutes)
+app.use('/api/users', usersRoutes)
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', rooms: roomManager.getRoomCount() })
@@ -52,13 +67,21 @@ io.use((socket: Socket, next) => {
 io.on('connection', (socket) => {
   console.log(`[connect] ${socket.id} (${(socket as any).username})`)
 
-  socket.on('disconnect', () => {
-    console.log(`[disconnect] ${socket.id}`)
-    roomManager.handleDisconnect(socket.id)
+  socket.on('disconnect', (reason) => {
+    console.log(`[disconnect] socket=${socket.id} user=${(socket as any).username} reason=${reason}`)
+    const result = roomManager.markPlayerDisconnected(socket.id)
+    if (result) {
+      const { roomId } = result
+      const room = roomManager.getRoom(roomId)
+      if (room) {
+        io.to(room.id).emit('room:state', room)
+      }
+      io.emit('room:list', roomManager.getPublicRooms())
+    }
   })
 
-  setupRoomHandlers(io, socket, roomManager)
-  setupGameHandlers(io, socket, roomManager)
+  setupRoomHandlers(io, socket, roomManager, gameManager)
+  setupGameHandlers(io, socket, roomManager, gameManager)
 })
 
 httpServer.listen(PORT, () => {

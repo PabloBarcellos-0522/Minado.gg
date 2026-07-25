@@ -1,47 +1,78 @@
-import type { Board, Player } from '@minado/shared'
-import { generateBoard, floodFill, checkWin, calculateScore } from '@minado/shared'
+import type { Board, BoardConfig, Player, GameMode } from '@minado/shared'
+import { generateBoard, cloneBoard, floodFill, checkWin, calculateScore } from '@minado/shared'
 
 export interface GameScoreEntry {
   playerId: string
   score: number
-  exploded: boolean
+}
+
+export interface PlayerBoardData {
+  board: Board
+  minePositions: Set<string>
 }
 
 export interface GameState {
   roomId: string
-  board: Board
-  config: { rows: number; cols: number; mines: number }
+  config: BoardConfig
   scores: Map<string, GameScoreEntry>
   startedAt: number
   endedAt?: number
-  minePositions: Set<string>
+  mode: GameMode
+  playerBoards: Map<string, PlayerBoardData>
+  // cooperative mode: all players share this board id
+  sharedBoardId?: string
+}
+
+function extractMinePositions(board: Board): Set<string> {
+  const pos = new Set<string>()
+  for (let r = 0; r < board.length; r++) {
+    for (let c = 0; c < board[0].length; c++) {
+      if (board[r][c].hasMine) pos.add(`${r}-${c}`)
+    }
+  }
+  return pos
 }
 
 export class GameManager {
   private games: Map<string, GameState> = new Map()
 
-  startGame(roomId: string, config: { rows: number; cols: number; mines: number }, players: Player[]): GameState {
-    const board = generateBoard(config.rows, config.cols, config.mines)
-
-    const minePositions = new Set<string>()
-    for (let r = 0; r < config.rows; r++) {
-      for (let c = 0; c < config.cols; c++) {
-        if (board[r][c].hasMine) minePositions.add(`${r}-${c}`)
-      }
-    }
-
+  startGame(roomId: string, config: BoardConfig, players: Player[], mode: GameMode): GameState {
     const scores = new Map<string, GameScoreEntry>()
     for (const p of players) {
-      scores.set(p.id, { playerId: p.id, score: 0, exploded: false })
+      scores.set(p.id, { playerId: p.id, score: 0 })
+    }
+
+    const playerBoards = new Map<string, PlayerBoardData>()
+
+    if (mode === 'multi-board') {
+      for (const p of players) {
+        const board = generateBoard(config.rows, config.cols, config.mines)
+        playerBoards.set(p.id, { board, minePositions: extractMinePositions(board) })
+      }
+    } else if (mode === 'cooperative') {
+      const board = generateBoard(config.rows, config.cols, config.mines)
+      const sharedId = 'shared'
+      playerBoards.set(sharedId, { board, minePositions: extractMinePositions(board) })
+      for (const p of players) {
+        playerBoards.set(p.id, { board, minePositions: extractMinePositions(board) })
+      }
+    } else {
+      // competitive / others: same mine layout, independent per-player boards
+      const template = generateBoard(config.rows, config.cols, config.mines)
+      const minePos = extractMinePositions(template)
+      for (const p of players) {
+        playerBoards.set(p.id, { board: cloneBoard(template), minePositions: minePos })
+      }
     }
 
     const state: GameState = {
       roomId,
-      board,
       config,
       scores,
       startedAt: Date.now(),
-      minePositions,
+      mode,
+      playerBoards,
+      sharedBoardId: mode === 'cooperative' ? 'shared' : undefined,
     }
 
     this.games.set(roomId, state)
@@ -52,6 +83,34 @@ export class GameManager {
     return this.games.get(roomId)
   }
 
+  getPlayerBoard(roomId: string, playerId: string): Board | null {
+    const state = this.games.get(roomId)
+    if (!state) return null
+    const bid = state.mode === 'cooperative' ? state.sharedBoardId! : playerId
+    return state.playerBoards.get(bid)?.board || null
+  }
+
+  getBoard(roomId: string): Board | null {
+    const state = this.games.get(roomId)
+    if (!state) return null
+    if (state.mode === 'cooperative') {
+      return state.playerBoards.get(state.sharedBoardId!)?.board || null
+    }
+    return null
+  }
+
+  removePlayerBoard(roomId: string, playerId: string): void {
+    const state = this.games.get(roomId)
+    if (!state) return
+    if (state.mode !== 'cooperative') {
+      state.playerBoards.delete(playerId)
+    }
+    state.scores.delete(playerId)
+    if (state.scores.size === 0) {
+      this.games.delete(roomId)
+    }
+  }
+
   revealCell(roomId: string, playerId: string, row: number, col: number):
     { success: true; cells: Array<{ cellId: string; value: number | 'mine'; revealedBy: string }>; delta: number; exploded?: boolean; gameEnded?: true }
     | { success: false; error: string } {
@@ -60,15 +119,17 @@ export class GameManager {
 
     const entry = state.scores.get(playerId)
     if (!entry) return { success: false, error: 'Jogador não encontrado' }
-    if (entry.exploded) return { success: false, error: 'Jogador já explodiu' }
 
-    const cell = state.board[row]?.[col]
+    const boardId = state.mode === 'cooperative' ? state.sharedBoardId! : playerId
+    const board = state.playerBoards.get(boardId)?.board
+    if (!board) return { success: false, error: 'Tabuleiro não encontrado' }
+
+    const cell = board[row]?.[col]
     if (!cell) return { success: false, error: 'Célula inválida' }
     if (cell.isRevealed) return { success: false, error: 'Célula já revelada' }
 
     if (cell.hasMine) {
       cell.isRevealed = true
-      entry.exploded = true
       entry.score += calculateScore('explode')
 
       return {
@@ -83,10 +144,10 @@ export class GameManager {
     let delta: number
 
     if (cell.adjacentMines === 0) {
-      const revealed = floodFill(state.board, row, col)
+      const revealed = floodFill(board, row, col)
       cells = revealed.map(({ row: r, col: c }) => ({
         cellId: `${r}-${c}`,
-        value: state.board[r][c].adjacentMines,
+        value: board[r][c].adjacentMines,
         revealedBy: playerId,
       }))
       delta = revealed.length > 5 ? calculateScore('flood-fill') : calculateScore('reveal')
@@ -98,7 +159,7 @@ export class GameManager {
 
     entry.score += delta
 
-    if (checkWin(state.board)) {
+    if (checkWin(board)) {
       entry.score += calculateScore('win')
       state.endedAt = Date.now()
 
@@ -122,7 +183,11 @@ export class GameManager {
     const entry = state.scores.get(playerId)
     if (!entry) return { success: false, error: 'Jogador não encontrado' }
 
-    const cell = state.board[row]?.[col]
+    const boardId = state.mode === 'cooperative' ? state.sharedBoardId! : playerId
+    const board = state.playerBoards.get(boardId)?.board
+    if (!board) return { success: false, error: 'Tabuleiro não encontrado' }
+
+    const cell = board[row]?.[col]
     if (!cell) return { success: false, error: 'Célula inválida' }
     if (cell.isRevealed) return { success: false, error: 'Célula já revelada' }
 

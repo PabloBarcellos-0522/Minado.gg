@@ -30,6 +30,7 @@ export interface Player {
   score: number
   isReady: boolean
   isHost: boolean
+  isConnected?: boolean
 }
 
 export interface Room {
@@ -64,6 +65,11 @@ export function calculateScore(action: 'reveal' | 'flood-fill' | 'flag-correct' 
     'win': 200,
   }
   return scores[action]
+}
+
+// Deep clone a board (independent copy)
+export function cloneBoard(board: Board): Board {
+  return board.map((row) => row.map((cell) => ({ ...cell })))
 }
 
 // Board generation

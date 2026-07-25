@@ -16,11 +16,9 @@ function getStoredToken(): string | null {
 
 export function getSocket(): Socket {
   if (!socket) {
-    const token = getStoredToken()
     socket = io(SERVER_URL, {
       autoConnect: false,
       transports: ['websocket', 'polling'],
-      auth: { token },
     })
 
     socket.on('connect', () => {
@@ -33,6 +31,11 @@ export function getSocket(): Socket {
 
     socket.on('connect_error', (err) => {
       console.warn('[socket] connection error:', err.message)
+      const freshToken = getStoredToken()
+      if (freshToken && err.message === 'Token não fornecido') {
+        socket!.auth = { token: freshToken }
+        socket!.connect()
+      }
     })
   }
   return socket
@@ -40,17 +43,47 @@ export function getSocket(): Socket {
 
 export function connectSocket(): void {
   const s = getSocket()
-  if (!s.connected) {
-    const token = getStoredToken()
-    s.auth = { token }
-    s.connect()
+  if (s.connected) return
+  const token = getStoredToken()
+  if (!token) {
+    console.warn('[socket] no token found, skipping connection')
+    return
   }
+  s.auth = { token }
+  s.connect()
 }
 
 export function disconnectSocket(): void {
   if (socket?.connected) {
     socket.disconnect()
   }
+}
+
+export function waitForConnection(timeout = 5000): Promise<void> {
+  const s = getSocket()
+  if (s.connected) return Promise.resolve()
+  if (!s.connected) {
+    connectSocket()
+  }
+  return new Promise((resolve, reject) => {
+    const onConnect = () => {
+      s.off('connect', onConnect)
+      s.off('connect_error', onError)
+      resolve()
+    }
+    const onError = (err: Error) => {
+      s.off('connect', onConnect)
+      s.off('connect_error', onError)
+      reject(err)
+    }
+    s.on('connect', onConnect)
+    s.on('connect_error', onError)
+    setTimeout(() => {
+      s.off('connect', onConnect)
+      s.off('connect_error', onError)
+      reject(new Error('Timeout aguardando conexão'))
+    }, timeout)
+  })
 }
 
 export function onSocketEvent<T = unknown>(event: string, handler: (data: T) => void): () => void {

@@ -1,10 +1,19 @@
 import type { Server, Socket } from 'socket.io'
 import type { RoomManager } from '../rooms/RoomManager.js'
-import { GameManager } from '../game/GameManager.js'
+import type { GameManager } from '../game/GameManager.js'
+import type { Room } from '@minado/shared'
 
-const gameManager = new GameManager()
+type RoomWithId = Room & { id: string; mode: string }
 
-export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomManager): void {
+function emitToTarget(io: Server, socket: Socket, room: RoomWithId, event: string, data: any) {
+  if (room.mode === 'cooperative') {
+    io.to(room.id).emit(event, data)
+  } else {
+    socket.emit(event, data)
+  }
+}
+
+export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomManager, gameManager: GameManager): void {
   socket.on('game:reveal', (data: { cellId: string }) => {
     const room = roomManager.getRoomBySocket(socket.id)
     if (!room || room.status !== 'playing') return
@@ -15,7 +24,7 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
 
     let gameState = gameManager.getGame(room.id)
     if (!gameState) {
-      gameManager.startGame(room.id, room.boardConfig, room.players)
+      gameManager.startGame(room.id, room.boardConfig, room.players, room.mode)
       gameState = gameManager.getGame(room.id)!
     }
 
@@ -27,8 +36,10 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
       return
     }
 
+    const emit = (event: string, data: any) => emitToTarget(io, socket, room, event, data)
+
     if (result.exploded) {
-      io.to(room.id).emit('game:cellRevealed', {
+      emit('game:cellRevealed', {
         cellId: data.cellId,
         value: 'mine',
         revealedBy: playerId,
@@ -43,13 +54,13 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
     }
 
     if (result.cells.length === 1) {
-      io.to(room.id).emit('game:cellRevealed', {
+      emit('game:cellRevealed', {
         cellId: result.cells[0].cellId,
         value: result.cells[0].value,
         revealedBy: playerId,
       })
     } else {
-      io.to(room.id).emit('game:cellRevealed', { batch: result.cells })
+      emit('game:cellRevealed', { batch: result.cells })
     }
 
     io.to(room.id).emit('game:scoreUpdate', {
@@ -86,7 +97,9 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
     const result = gameManager.flagCell(room.id, playerId, row, col)
     if (!result.success) return
 
-    io.to(room.id).emit('game:cellFlagged', {
+    const emit = (event: string, data: any) => emitToTarget(io, socket, room, event, data)
+
+    emit('game:cellFlagged', {
       cellId: result.cellId,
       playerId,
       flagged: result.flagged,
@@ -110,4 +123,6 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
       type: data.type,
     })
   })
+
+  // chat:message is handled in roomHandler.ts — do not duplicate
 }

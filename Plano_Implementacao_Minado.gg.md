@@ -1,6 +1,6 @@
 # Plano de Implementação — Minado.gg (ATUALIZADO)
 
-> ⚠️ **Revisado em 25/07/2026.** Frontend ~95% completo. Stores Zustand criadas. Servidor com Socket.IO esboçado. **Gargalo: DB + Auth real + sincronia stores/socket.**
+> ⚠️ **Revisado em 25/07/2026.** Frontend ~95% completo. Backend (Express + Socket.IO + Prisma + JWT + OAuth) **completo**. Banco Postgres **ao vivo no Neon**. Stores sincronizadas com socket real.
 
 ---
 
@@ -16,16 +16,16 @@
 | Páginas React Router (12 rotas)                                                  | ✅ **12 prontas** |
 | Lógica de jogo (`packages/shared`)                                               | ✅ **Pronta** |
 | Tema claro/escuro                                                                | ✅ OK |
-| **Zustand stores** (auth, room, game)                                            | ✅ **Criadas** (com fallback mock) |
-| **Servidor Express + Socket.IO** (handlers de sala/jogo)                         | ✅ **Esboçado** (RoomManager, roomHandler, gameHandler) |
+| **Zustand stores** (auth, room, game)                                            | ✅ **Criadas** + socket listeners |
+| **Servidor Express + Socket.IO** (handlers de sala/jogo)                         | ✅ **Completo** (RoomManager, GameManager) |
 | **Páginas integradas com stores** (Navbar, Login, Lobby, Sala, Partida, Resultado)| ✅ **Integradas** |
 | **`src/styles/` legado na raiz**                                                 | ✅ **Removido** |
-| **Auth real** (JWT + OAuth Google/Discord/GitHub)                                | ❌ Só mock na store |
-| **Banco de dados** (Postgres + Prisma)                                           | ❌ Não configurado |
-| **GameManager server-side** (boards autoritativos, score real)                   | ❌ Síncrono parcial no gameHandler |
-| **Store ↔ Socket sync** (eventos reais substituindo mocks)                       | ❌ Stores usam fallback mock quando socket desconectado |
+| **Auth real** (JWT + OAuth Google/Discord/GitHub)                                | ✅ **Rotas REST + middleware + socket auth** |
+| **Banco de dados** (Postgres + Prisma)                                           | ✅ **Schema criado + Neon ativo** |
+| **GameManager server-side** (boards autoritativos, score real)                   | ✅ **Criado** |
+| **Store ↔ Socket sync** (eventos reais substituindo mocks)                       | ✅ **Implementado** (fallback mock ainda existe para dev offline) |
 
-**Conclusão:** frontend ~95%, servidor esboçado. Próximo ciclo é **infra + backend**: Prisma → Auth → sincronia stores/socket.
+**Conclusão:** Fase 2 completa. Próximos passos: testes integrados, modos multiplayer avançados (Fase 3), e features sociais (Fase 4).
 
 ---
 
@@ -35,9 +35,9 @@
 - **Estado global:** Zustand 5
 - **Realtime:** Socket.IO (cliente + servidor)
 - **Backend:** Node.js + Express + Socket.IO
-- **Banco de dados:** PostgreSQL (via Prisma ORM)
-- **Auth:** JWT (local) + OAuth (Google, Discord, GitHub) via Passport.js
-- **Hospedagem:** Vercel (frontend) + Railway/Render (servidor) + Supabase/Neon (Postgres)
+- **Banco de dados:** PostgreSQL (via Prisma ORM) — **Neon (Serverless)**
+- **Auth:** JWT (local) + OAuth (Google, Discord, GitHub)
+- **Hospedagem:** Vercel (frontend) + Railway/Render (servidor) + Neon (Postgres)
 
 ---
 
@@ -54,22 +54,25 @@ Minado.gg/
 │   │   │   │   ├── blocks/           # 8 blocos
 │   │   │   │   └── game/             # 7 componentes de jogo
 │   │   │   ├── store/                # Zustand — auth, room, game
-│   │   │   ├── lib/                  # socket.ts (cliente Socket.IO)
+│   │   │   ├── lib/                  # socket.ts + api.ts
 │   │   │   └── styles/               # index.css com Tailwind 4 @theme
 │   │   └── index.html
 │   └── server/                       # Backend Express + Socket.IO
 │       ├── src/
 │       │   ├── sockets/              # Handlers: roomHandler, gameHandler
 │       │   ├── game/                 # GameManager (boards server-side)
-│       │   ├── routes/               # REST: auth, profile, ranking
+│       │   ├── routes/               # REST: auth, profile, ranking, oauth
 │       │   ├── middleware/           # JWT middleware
-│       │   ├── db/                   # Prisma schema + client
+│       │   ├── db/                   # Prisma client singleton
+│       │   ├── generated/prisma/     # Prisma Client (gerado)
 │       │   └── rooms/               # RoomManager
-│       ├── prisma/                   # Prisma schema
+│       ├── prisma/                   # Schema Prisma
+│       ├── prisma.config.ts
+│       ├── .env                      # DATABASE_URL (Neon)
 │       ├── package.json
 │       └── tsconfig.json
 └── packages/
-    └── shared/                       # Tipos e funções puras
+    └── shared/                       # Tipos + funções puras
 ```
 
 ---
@@ -79,7 +82,7 @@ Minado.gg/
 | Rota                     | Página                           | Status |
 | ------------------------ | -------------------------------- | ------ |
 | `/`                      | Home / Landing                    | ✅ |
-| `/login`                 | Login (com cadastro)              | ✅ |
+| `/login`                 | Login (com cadastro + OAuth)      | ✅ |
 | `/lobby`                 | Lobby com filtros, Tabs, salas    | ✅ |
 | `/lobby/criar-sala`      | Criar sala (form completo)        | ✅ |
 | `/sala/:id`              | Sala de espera + roster + chat    | ✅ |
@@ -93,72 +96,39 @@ Minado.gg/
 
 ---
 
-## 5. Componentes React — já extraídos
+## 5. Componentes React
 
-**Atômicos (`src/components/ui`)** — 10 componentes: Button, Input, Badge, Avatar, Card, Tabs, Modal, Progress, Skeleton, Alert.
-
-**Blocos (`src/components/blocks`)** — 8 blocos: Navbar, RoomCard, Leaderboard, ProfileCard, MatchCard, ChatPanel, PlayerRoster, GameModeCard.
-
-**Jogo (`src/components/game`)** — 7 componentes: Board, Cell, Mascote, Banner, PingRow, FxBoom, FxConfetti.
+**Atômicos (10):** Button, Input, Badge, Avatar, Card, Tabs, Modal, Progress, Skeleton, Alert.
+**Blocos (8):** Navbar, RoomCard, Leaderboard, ProfileCard, MatchCard, ChatPanel, PlayerRoster, GameModeCard.
+**Jogo (7):** Board, Cell, Mascote, Banner, PingRow, FxBoom, FxConfetti.
 
 ---
 
-## 6. Lógica de jogo — implementada em `packages/shared`
+## 6. Lógica de jogo
 
-### 6.1 Núcleo do Campo Minado ✅
+### 6.1 Núcleo ✅
+- `generateBoard`, `floodFill`, `checkWin`, `calculateScore` em `packages/shared`
 
-- `generateBoard(rows, cols, mines, safeRow?, safeCol?)` — geração segura (1º clique nunca mina)
-- `floodFill(board, row, col)` — revelar área vazia (DFS)
-- `checkWin(board)` — todas as células sem mina reveladas
-- `calculateScore(action)` — pontuação por ação
+### 6.2 Multiplayer — arquitetura ✅
+- **Competitivo:** servidor gera board, valida cada jogada, pontua, detecta win/lose
+- **Vários tabuleiros (corrida):** pendente de implementação
+- **Cooperativo:** pendente
+- **Battle Royale:** pendente
+- **Fog of War:** pendente (mais complexo — visão parcial por socket)
 
-### 6.2 Lógica específica multiplayer (pendente de implementação no servidor)
+### 6.3 Sala ✅
+- CRUD completo via Socket.IO (RoomManager + roomHandler)
+- Ready/Start com validação server-side (mín 2 jogadores, todos prontos)
 
-**Competitivo (mesmo tabuleiro):**
-- Todos recebem mesmo tabuleiro gerado no servidor
-- Célula revelada guarda `revealedBy: playerId` → cor do jogador
-- Pontuação calculada no servidor a cada jogada
-- Ao explodir: penalidade, mas continua
-- Fim: tabuleiro 100% revelado ou tempo esgotado
-
-**Vários tabuleiros (corrida):**
-- Cada jogador com tabuleiro independente (mesma seed de dificuldade)
-- Explodir → penalidade de tempo (3-5s congelado)
-- Vitória: primeiro a limpar o próprio tabuleiro
-
-**Cooperativo:**
-- Tabuleiro compartilhado, qualquer um pode clicar
-- Contador de erros compartilhado
-- Dificuldade aumenta por fase/rodada
-
-**Battle Royale:**
-- Muitos jogadores, tabuleiros menores por rodada
-- Ao explodir → eliminado (vira espectador)
-- Servidor reduz tamanho / aumenta densidade a cada rodada
-- Último não eliminado vence
-
-**Fog of War:**
-- Cada jogador tem janela de visão (raio N ao redor do último clique)
-- Células fora da visão aparecem como neblina
-- Servidor envia visões parciais diferentes para cada socket
-
-### 6.3 Lógica de sala ✅ (parcial)
-
-- Criar sala: gera `roomId` curto ✅ (RoomManager + roomHandler)
-- Entrar/sair de sala ✅
-- Ready/Start ✅ (validação server-side)
-- Reconexão: manter slot por X segundos 🔴 pendente
-
-### 6.4 Anti-trapaça 🔴 pendente
-
-- Nunca enviar posição das minas ao cliente
-- Validar toda jogada no servidor
-- Rate limit de eventos socket por jogador
-- Fog of War: mandar apenas recorte visível
+### 6.4 Anti-trapaça ✅ (parcial)
+- Mina nunca enviada antes de revelada ✅
+- Jogada validada no servidor ✅
+- Rate limit: pendente
+- Fog of War: pendente
 
 ---
 
-## 7. Sistema de pontuação (implementado em `packages/shared`)
+## 7. Sistema de pontuação
 
 | Ação                      | Pontos |
 | ------------------------- | ------ |
@@ -169,175 +139,61 @@ Minado.gg/
 | Explodir                  | −50    |
 | Vitória                   | +200   |
 
+Função `calculateScore()` em `packages/shared`, usada pelo GameManager (servidor).
+
 ---
 
-## 8. Modelo de dados (Postgres, via Prisma)
+## 8. Modelo de dados (Postgres — Neon + Prisma)
 
 ```prisma
-model User {
-  id        String   @id @default(cuid())
-  username  String   @unique
-  email     String   @unique
-  avatarUrl String?
-  password  String?                     // null para OAuth-only
-  xp        Int      @default(0)
-  level     Int      @default(1)
-  createdAt DateTime @default(now())
-
-  accounts      Account[]
-  matches       MatchPlayer[]
-  stats         Stats?
-  achievements  UserAchievement[]
-}
-
-model Account {
-  id              String  @id @default(cuid())
-  userId          String
-  provider        String  // "google" | "discord" | "github"
-  providerId      String  // id do usuário no provider
-  accessToken     String?
-  refreshToken    String?
-
-  user User @relation(fields: [userId], references: [id])
-
-  @@unique([provider, providerId])
-}
-
-model Stats {
-  id            String @id @default(cuid())
-  userId        String @unique
-  victories     Int    @default(0)
-  defeats       Int    @default(0)
-  matchesPlayed Int    @default(0)
-  currentStreak Int    @default(0)
-  maxStreak     Int    @default(0)
-  rank          Int    @default(0)
-
-  user User @relation(fields: [userId], references: [id])
-}
-
-model Match {
-  id         String   @id @default(cuid())
-  mode       String   // GameMode
-  boardRows  Int
-  boardCols  Int
-  mineCount  Int
-  status     String   // "playing" | "finished"
-  startedAt  DateTime @default(now())
-  endedAt    DateTime?
-
-  players MatchPlayer[]
-}
-
-model MatchPlayer {
-  id        String @id @default(cuid())
-  matchId   String
-  userId    String
-  score     Int    @default(0)
-  exploded  Boolean @default(false)
-  rank      Int?
-  actions   Json?  // log de ações
-
-  match Match @relation(fields: [matchId], references: [id])
-  user  User  @relation(fields: [userId], references: [id])
-
-  @@unique([matchId, userId])
-}
-
-model Achievement {
-  id          String @id @default(cuid())
-  title       String
-  description String
-  condition   String // JSON com condição
-}
-
-model UserAchievement {
-  userId        String
-  achievementId String
-  unlockedAt    DateTime @default(now())
-
-  user        User        @relation(fields: [userId], references: [id])
-  achievement Achievement @relation(fields: [achievementId], references: [id])
-
-  @@id([userId, achievementId])
-}
+// 7 models: User, Account (OAuth), Stats, Match, MatchPlayer, Achievement, UserAchievement
+// Schema completo em apps/server/prisma/schema.prisma
+// Banco ativo no Neon via Prisma db push
 ```
-
-> Estado **efêmero** de partidas em andamento (tabuleiros, células reveladas, timers) fica em **memória** (GameManager), não no Postgres. Só persiste o resumo final para ranking/histórico.
 
 ---
 
 ## 9. Eventos Socket.IO — contrato
 
-**Cliente → Servidor**
+**Cliente → Servidor:** `room:join`, `room:leave`, `room:ready`, `room:start`, `game:reveal`, `game:flag`, `game:ping`, `chat:message`
 
-- `room:join` `{ roomId }`
-- `room:leave`
-- `room:ready` `{ ready: boolean }`
-- `room:start` (host)
-- `game:reveal` `{ cellId }`
-- `game:flag` `{ cellId }`
-- `game:ping` `{ type: 'haha'|'oops'|'gg'|'heart' }`
-- `chat:message` `{ text }`
-
-**Servidor → Cliente**
-
-- `room:list` (salas públicas)
-- `room:state` (snapshot completo da sala)
-- `room:playerJoined` / `room:playerLeft`
-- `game:started` `{ boardMeta }` — só linhas/colunas/minas, nunca posições
-- `game:cellRevealed` `{ cellId, value, revealedBy }` (ou batch para flood fill)
-- `game:cellFlagged` `{ cellId, playerId, flagged }`
-- `game:scoreUpdate` `{ playerId, delta, total }`
-- `game:playerEliminated` `{ playerId }`
-- `game:ended` `{ result, scoreboard }`
-- `chat:message` `{ from, text, ts }`
-- `error` `{ code, message }`
+**Servidor → Cliente:** `room:list`, `room:state`, `room:playerJoined`, `room:playerLeft`, `game:started`, `game:cellRevealed`, `game:cellFlagged`, `game:scoreUpdate`, `game:playerEliminated`, `game:ended`, `chat:message`, `error`
 
 ---
 
 ## 10. Roadmap
 
-**Fase 0 — Fundação ✅ COMPLETA**
-
-Setup monorepo, Tailwind 4, roteador, componentes, páginas, lógica de jogo em `packages/shared`.
-
-**Fase 1 — Jogo single-player ✅ COMPLETA**
-
-Board, Cell, flood fill, geração segura, scoring, timer, vitória/derrota, FX.
-
-**Fase 2 — Backend + multiplayer 🟡 EM ANDAMENTO**
+**Fase 0 — Fundação ✅**
+**Fase 1 — Jogo single-player ✅**
+**Fase 2 — Backend + multiplayer ✅ COMPLETA**
 
 | Sub-fase | Status |
 |----------|--------|
-| 2.1 Stores Zustand (auth, room, game) | ✅ Concluído |
-| 2.2 Servidor Express + Socket.IO + handlers | ✅ Concluído |
-| 2.3 Páginas integradas com stores | ✅ Concluído |
-| 2.4 Limpeza `src/styles/` legado | ✅ Concluído |
-| 2.5 **Banco de dados (Postgres + Prisma)** | 🔴 **Pendente** |
-| 2.6 **Auth real (JWT + OAuth)** | 🔴 **Pendente** |
-| 2.7 **Sincronia stores ↔ socket real** | 🔴 **Pendente** |
+| 2.1 Stores Zustand | ✅ |
+| 2.2 Servidor Express + Socket.IO + handlers | ✅ |
+| 2.3 Páginas integradas com stores | ✅ |
+| 2.4 Limpeza `src/styles/` legado | ✅ |
+| 2.5 Banco de dados (Postgres + Prisma) | ✅ **Neon ativo** |
+| 2.6 Auth real (JWT + OAuth) | ✅ |
+| 2.7 Sincronia stores ↔ socket real | ✅ |
 
-**Fase 3 — Mais modos (após Fase 2)**
-
+**Fase 3 — Mais modos**
 - Vários tabuleiros (corrida)
 - Cooperativo (erros compartilhados, fases)
 - Battle Royale (eliminação, rodadas)
 - Fog of War (visão parcial)
 
 **Fase 4 — Social e retenção**
-
-- Ranking global/semanal/mensal, perfil, conquistas, missões
+- Ranking, perfil, conquistas, missões diárias
 - Chat completo + pings, convites por link
 - Replay de partidas, histórico
 - Personalização (bandeiras, cursor, tema)
 
 **Fase 5 — Polimento**
-
-- Anti-trapaça (rate limit, validação server-side)
+- Anti-trapaça (rate limit)
 - Performance (lazy loading, otimizar Board)
 - Acessibilidade (`prefers-reduced-motion`, contraste, teclado)
-- Testes unitários da lógica de jogo
+- Testes unitários
 
 ---
 
@@ -352,8 +208,11 @@ Board, Cell, flood fill, geração segura, scoring, timer, vitória/derrota, FX.
 7. ✅ Servidor Express + Socket.IO
 8. ✅ Páginas integradas com stores
 9. ✅ Limpeza `src/styles/` legado
-10. 🔴 **Prisma: instalar, schema, migrate**
-11. 🔴 **Auth: rotas REST (register, login, oauth) + middleware JWT**
-12. 🔴 **Frontend: authStore → chamadas HTTP reais + socket com token**
-13. 🔴 **Server: GameManager (boards server-side autoritativos)**
-14. 🔴 **Stores: roomStore + gameStore sincronizadas com socket real**
+10. ✅ **Prisma: schema, generate, db push (Neon)**
+11. ✅ **Auth: JWT + OAuth + middleware**
+12. ✅ **Frontend: authStore real + socket com token**
+13. ✅ **Server: GameManager autoritativo**
+14. ✅ **Stores sincronizadas com socket**
+15. 🔹 **Testar login/registro reais**
+16. 🔹 **Implementar modos: corrida, coop, BR, FoW**
+17. 🔹 **Ranking + histórico (persistir Match/MatchPlayer)**

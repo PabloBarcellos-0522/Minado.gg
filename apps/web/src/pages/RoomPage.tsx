@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -9,8 +9,10 @@ import { PlayerRoster } from '@/components/blocks/PlayerRoster'
 import { ChatPanel } from '@/components/blocks/ChatPanel'
 import { Navbar } from '@/components/blocks/Navbar'
 import { Mascote } from '@/components/game/Mascote'
+import { PingRow } from '@/components/game/PingRow'
 import { useRoomStore } from '@/store/roomStore'
 import { useAuthStore } from '@/store/authStore'
+import { getSocket, onSocketEvent } from '@/lib/socket'
 import type { GameMode, Difficulty } from '@minado/shared'
 
 const modeLabels: Record<GameMode, string> = {
@@ -40,28 +42,51 @@ export function RoomPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
+  const location = useLocation()
   const room = useRoomStore((s) => s.currentRoom)
   const joinRoom = useRoomStore((s) => s.joinRoom)
   const leaveRoom = useRoomStore((s) => s.leaveRoom)
   const toggleReady = useRoomStore((s) => s.toggleReady)
   const startGame = useRoomStore((s) => s.startGame)
   const initSocketListeners = useRoomStore((s) => s.initSocketListeners)
+  const roomError = useRoomStore((s) => s.error)
+  const isLoading = useRoomStore((s) => s.isLoading)
   const user = useAuthStore((s) => s.user)
 
   const [messages, setMessages] = useState<Array<{ id: string; from: string; text: string; ts: string; isSystem?: boolean }>>([])
   const [showInviteModal, setShowInviteModal] = useState(false)
+  const [showCreatedModal, setShowCreatedModal] = useState(!!(location.state as any)?.justCreated)
   const [inviteLink, setInviteLink] = useState('')
   const currentUserId = user?.id || '1'
   const [countdown, setCountdown] = useState<number | null>(null)
+  const isNavigatingToMatch = useRef(false)
+  const joinedInThisEffect = useRef(false)
 
   useEffect(() => {
     if (id) {
-      joinRoom(id)
+      if (useRoomStore.getState().currentRoom?.id !== id) {
+        joinRoom(id)
+        joinedInThisEffect.current = true
+      }
     }
+
+    const unsubChat = onSocketEvent('chat:message', (data: unknown) => {
+      const msg = data as { id: string; from: string; text: string; ts: string }
+      setMessages((prev) => [...prev, {
+        id: msg.id,
+        from: msg.from,
+        text: msg.text,
+        ts: msg.ts ? new Date(msg.ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '',
+      }])
+    })
+
     const cleanup = initSocketListeners()
     return () => {
+      unsubChat()
       cleanup()
-      leaveRoom()
+      if (!isNavigatingToMatch.current && joinedInThisEffect.current) {
+        leaveRoom()
+      }
     }
   }, [id])
 
@@ -77,6 +102,7 @@ export function RoomPage() {
   const canStart = isHost && allReady && room?.status === 'waiting'
 
   const handleStartGame = () => {
+    isNavigatingToMatch.current = true
     startGame()
     setTimeout(() => navigate(`/partida/${id}`), 500)
   }
@@ -85,7 +111,7 @@ export function RoomPage() {
     if (!room) return
     const allReady = room.players.length >= 2 && room.players.every((p) => p.isReady)
     const isHost = room.hostId === currentUserId
-    if (allReady && room.players.length >= 2) {
+    if (allReady && room.players.length >= 2 && room.status === 'waiting') {
       let count = 5
       setCountdown(count)
       const interval = setInterval(() => {
@@ -106,7 +132,20 @@ export function RoomPage() {
     }
   }, [room])
 
+  useEffect(() => {
+    if (room?.status === 'playing') {
+      isNavigatingToMatch.current = true
+      const timer = setTimeout(() => navigate(`/partida/${id}`), 300)
+      return () => clearTimeout(timer)
+    }
+  }, [room?.status, id, navigate])
+
   const handleSendMessage = (text: string) => {
+    const socket = getSocket()
+    if (socket.connected) {
+      socket.emit('chat:message', { text })
+      return
+    }
     const newMsg = {
       id: Date.now().toString(),
       from: currentPlayer?.username || 'Você',
@@ -114,6 +153,16 @@ export function RoomPage() {
       ts: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
     }
     setMessages((prev) => [...prev, newMsg])
+  }
+
+  const handlePing = (type: string) => {
+    const pingMessages: Record<string, string> = {
+      haha: '😄 Haha!',
+      oops: '😅 Oops!',
+      gg: '👏 GG!',
+      heart: '❤️',
+    }
+    handleSendMessage(pingMessages[type] || type)
   }
 
   const copyInviteLink = async () => {
@@ -127,8 +176,20 @@ export function RoomPage() {
         <Navbar />
         <main className="flex-1 flex items-center justify-center p-5">
           <div className="text-center">
-            <div className="w-12 h-12 rounded-full bg-surface-muted border border-border mx-auto mb-4 animate-pulse" />
-            <p className="font-heading font-bold text-h5 text-ink-muted">Entrando na sala...</p>
+            {roomError ? (
+              <>
+                <svg className="w-16 h-16 mx-auto text-error mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <p className="font-heading font-bold text-h5 text-error mb-4">{roomError}</p>
+                <Button variant="primary" onClick={() => navigate('/lobby')}>Voltar ao Lobby</Button>
+              </>
+            ) : (
+              <>
+                <div className="w-12 h-12 rounded-full bg-surface-muted border border-border mx-auto mb-4 animate-pulse" />
+                <p className="font-heading font-bold text-h5 text-ink-muted">{isLoading ? 'Entrando na sala...' : 'Aguardando servidor...'}</p>
+              </>
+            )}
           </div>
         </main>
       </div>
@@ -226,8 +287,8 @@ export function RoomPage() {
             {/* Player Roster */}
             <PlayerRoster players={currentRoom.players} currentUserId={currentUserId} />
 
-            {/* Ready Toggle (for non-host) */}
-            {!isHost && currentRoom.status === 'waiting' && (
+            {/* Ready Toggle for all players */}
+            {currentRoom.status === 'waiting' && (
               <Card>
                 <CardContent className="py-2">
                   <Button
@@ -252,9 +313,15 @@ export function RoomPage() {
                       </>
                     )}
                   </Button>
-                  <p className="text-center text-small text-ink-muted mt-2">
-                    O host iniciará quando todos estiverem prontos
-                  </p>
+                  {isHost ? (
+                    <p className="text-center text-small text-ink-muted mt-2">
+                      Marque como pronto e clique em "Iniciar Partida" quando todos estiverem prontos
+                    </p>
+                  ) : (
+                    <p className="text-center text-small text-ink-muted mt-2">
+                      O host iniciará quando todos estiverem prontos
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -289,25 +356,8 @@ export function RoomPage() {
               <CardHeader>
                 <CardTitle>Reações Rápidas</CardTitle>
               </CardHeader>
-              <CardContent className="py-2">
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { type: 'haha', label: 'Haha', color: 'accent' },
-                    { type: 'oops', label: 'Oops', color: 'error' },
-                    { type: 'gg', label: 'GG', color: 'success' },
-                    { type: 'heart', label: '❤️', color: 'secondary' },
-                  ].map((ping) => (
-                    <Button
-                      key={ping.type}
-                      variant="ghost"
-                      className="h-20 flex-col gap-1"
-                      onClick={() => handleSendMessage(`[${ping.label}]`)}
-                    >
-                      <span className="text-2xl">{ping.label === '❤️' ? '❤️' : '😄'}</span>
-                      <span className="text-small font-heading font-bold">{ping.label}</span>
-                    </Button>
-                  ))}
-                </div>
+              <CardContent className="py-3">
+                <PingRow onSelect={handlePing} />
               </CardContent>
             </Card>
 
@@ -337,6 +387,25 @@ export function RoomPage() {
           </div>
         </div>
       </main>
+
+      {/* Created Modal */}
+      <Modal open={showCreatedModal} onClose={() => setShowCreatedModal(false)} title="Sala Criada!">
+        <div className="text-center py-2">
+          <div className="w-16 h-16 rounded-full bg-success-soft grid place-items-center mx-auto mb-4 text-success">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h3 className="font-heading font-bold text-h5 mb-2">Sala <span className="text-primary-600">{room?.id}</span> criada!</h3>
+          <p className="text-ink-muted text-body mb-4">Compartilhe o código ou o link para seus amigos entrarem.</p>
+          <div className="p-3 rounded-[14px] bg-surface-muted border border-border font-mono text-h6 font-bold text-primary-600">
+            {room?.id}
+          </div>
+        </div>
+        <ModalActions>
+          <Button variant="primary" onClick={() => setShowCreatedModal(false)} className="w-full">Fechar</Button>
+        </ModalActions>
+      </Modal>
 
       {/* Invite Modal */}
       <Modal open={showInviteModal} onClose={() => setShowInviteModal(false)} title="Convidar Amigos">

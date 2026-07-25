@@ -77,7 +77,7 @@ export const useAuthStore = create<AuthState>()(
           const data = await apiFetch<AuthUser & { xp: number; level: number }>('/auth/me')
           set({ user: { id: data.id, username: data.username, email: data.email, avatarUrl: data.avatarUrl }, isAuthenticated: true })
         } catch {
-          set({ user: null, token: null, isAuthenticated: false })
+          set({ isAuthenticated: false })
         }
       },
 

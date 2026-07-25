@@ -13,14 +13,9 @@ import { ChatPanel } from '@/components/blocks/ChatPanel'
 import { Navbar } from '@/components/blocks/Navbar'
 import { useGameStore } from '@/store/gameStore'
 import { useRoomStore } from '@/store/roomStore'
-import type { GameMode, Difficulty } from '@minado/shared'
-
-const difficultyConfigs: Record<Difficulty, { rows: number; cols: number; mines: number }> = {
-  easy: { rows: 9, cols: 9, mines: 10 },
-  medium: { rows: 16, cols: 16, mines: 40 },
-  hard: { rows: 16, cols: 30, mines: 99 },
-  expert: { rows: 24, cols: 30, mines: 150 },
-}
+import { useAuthStore } from '@/store/authStore'
+import { getSocket } from '@/lib/socket'
+import type { GameMode } from '@minado/shared'
 
 const modeLabels: Record<GameMode, string> = {
   competitive: 'Competitivo',
@@ -29,11 +24,6 @@ const modeLabels: Record<GameMode, string> = {
   'battle-royale': 'Battle Royale',
   'fog-of-war': 'Fog of War',
 }
-
-const playerColors = [
-  '#16A34A', '#8B5CF6', '#F59E0B', '#EF4444',
-  '#06B6D4', '#22C55E', '#A855F7', '#EC4899',
-]
 
 const formatTime = (seconds: number) => {
   const m = Math.floor(seconds / 60).toString().padStart(2, '0')
@@ -55,9 +45,8 @@ export function MatchPage() {
   const showConfetti = useGameStore((s) => s.showConfetti)
   const boardConfig = useGameStore((s) => s.boardConfig)
   const currentUserId = useGameStore((s) => s.currentUserId)
+  const removedForInactivity = useGameStore((s) => s.removedForInactivity)
 
-  const initBoard = useGameStore((s) => s.initBoard)
-  const setPlayers = useGameStore((s) => s.setPlayers)
   const revealCell = useGameStore((s) => s.revealCell)
   const flagCell = useGameStore((s) => s.flagCell)
   const addMessage = useGameStore((s) => s.addMessage)
@@ -65,43 +54,39 @@ export function MatchPage() {
   const setShowBoom = useGameStore((s) => s.setShowBoom)
   const setShowConfetti = useGameStore((s) => s.setShowConfetti)
   const setCurrentUserId = useGameStore((s) => s.setCurrentUserId)
-
-  const room = useRoomStore((s) => s.currentRoom)
+  const setRemovedForInactivity = useGameStore((s) => s.setRemovedForInactivity)
 
   const [showChat, setShowChat] = useState(true)
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false)
 
   const mineCount = boardConfig.mines
   const minesRemaining = mineCount - flagsPlaced
 
   useEffect(() => {
-    const config = room?.boardConfig ?? difficultyConfigs.medium
-    const mode = room?.mode ?? 'competitive'
-    initBoard(config, mode)
+    const roomId = id
+    if (!roomId) return
 
-    const gamePlayers = (room?.players.length ? room.players : [
-      { id: '1', username: 'Pablo' },
-      { id: '2', username: 'Ana' },
-      { id: '3', username: 'Carlos' },
-      { id: '4', username: 'Bia' },
-    ]).map((p, i) => ({
-      id: p.id,
-      username: p.username,
-      score: 0,
-      color: playerColors[i % playerColors.length],
-    }))
+    const board = useGameStore.getState().board
 
-    setPlayers(gamePlayers)
-    const me = gamePlayers[0]
-    if (me) setCurrentUserId(me.id)
+    // Join/rejoin the room so the server knows this socket belongs to this player
+    useRoomStore.getState().joinRoom(roomId)
 
-    const sysMsg = {
-      id: 'sys-start',
-      from: 'Sistema',
-      text: 'Partida iniciada! Boa sorte!',
-      ts: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-      isSystem: true,
+    const authUser = useAuthStore.getState().user
+    if (authUser?.id) {
+      setCurrentUserId(authUser.id)
     }
-    addMessage(sysMsg)
+
+    // Only add sys-start if board already exists (navigated from RoomPage normally)
+    // When reconnecting, the game:started socket event will populate the store
+    if (board.length > 0 && !useGameStore.getState().messages.find((m) => m.id === 'sys-start')) {
+      addMessage({
+        id: 'sys-start',
+        from: 'Sistema',
+        text: 'Partida iniciada! Boa sorte!',
+        ts: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        isSystem: true,
+      })
+    }
   }, [])
 
   useEffect(() => {
@@ -118,6 +103,38 @@ export function MatchPage() {
       return () => clearTimeout(timer)
     }
   }, [gameState, id, navigate])
+
+  useEffect(() => {
+    if (removedForInactivity) {
+      setRemovedForInactivity(false)
+      navigate('/sala', { state: { error: 'Você foi removido da partida por inatividade' } })
+    }
+  }, [removedForInactivity, navigate, setRemovedForInactivity])
+
+  useEffect(() => {
+    if (!board || board.length === 0) {
+      const timer = setTimeout(() => setLoadingTimedOut(true), 10000)
+      return () => clearTimeout(timer)
+    }
+    setLoadingTimedOut(false)
+  }, [board])
+
+  // Guard: wait for board data before rendering (covers reconnect scenario)
+  if (!board || board.length === 0) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center bg-canvas">
+        <div className="text-center">
+          <div className="animate-spin w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full mx-auto mb-4" />
+          <p className="font-heading text-h5 text-ink mb-4">Reconectando...</p>
+          {loadingTimedOut && (
+            <Button variant="secondary" onClick={() => navigate('/sala')}>
+              Voltar ao lobby
+            </Button>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   const handleReveal = (row: number, col: number) => {
     revealCell(row, col)
@@ -138,6 +155,11 @@ export function MatchPage() {
   }
 
   const sendMessage = (text: string) => {
+    const socket = getSocket()
+    if (socket.connected) {
+      socket.emit('chat:message', { text })
+      return
+    }
     const currentPlayer = players.find((p) => p.id === currentUserId)
     const newMsg = {
       id: Date.now().toString(),
@@ -260,7 +282,7 @@ export function MatchPage() {
                 <div
                   key={p.id}
                   className={`flex items-center gap-2 p-2 rounded-[14px] ${p.id === currentUserId ? 'bg-surface-muted' : ''}`}
-                  style={{ opacity: p.isEliminated ? 0.5 : 1 }}
+                  style={{ opacity: p.isEliminated || p.isConnected === false ? 0.5 : 1 }}
                 >
                   <Avatar
                     size="sm"
@@ -275,6 +297,7 @@ export function MatchPage() {
                     {p.score >= 0 ? '+' : ''}{p.score}
                   </span>
                   {p.isEliminated && <Badge variant="danger" size="sm">Eliminado</Badge>}
+                  {p.isConnected === false && <Badge variant="warning" size="sm">Desconectado</Badge>}
                 </div>
               ))}
             </div>

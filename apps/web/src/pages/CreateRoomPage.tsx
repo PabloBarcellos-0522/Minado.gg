@@ -5,9 +5,9 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Switch } from '@/components/ui/Switch'
-import { Modal, ModalActions } from '@/components/ui/Modal'
 import { Tabs } from '@/components/ui/Tabs'
 import { Alert } from '@/components/ui/Alert'
+import { useRoomStore } from '@/store/roomStore'
 import { GameMode, Difficulty, DIFFICULTY_CONFIG } from '@minado/shared'
 
 const modeOptions: { value: GameMode; label: string; description: string; icon: React.ReactNode }[] = [
@@ -97,8 +97,6 @@ export function CreateRoomPage() {
   const [useCustomBoard, setUseCustomBoard] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [showSuccessModal, setShowSuccessModal] = useState(false)
-  const [createdRoomId, setCreatedRoomId] = useState('')
 
   const selectedModeInfo = modeOptions.find((m) => m.value === selectedMode)
   const difficultyConfig = DIFFICULTY_CONFIG[selectedDifficulty]
@@ -139,18 +137,17 @@ export function CreateRoomPage() {
       }
     }
 
-    // Simulate API call
-    await new Promise((r) => setTimeout(r, 1000))
-
-    const roomId = Math.random().toString(36).substring(2, 8).toUpperCase()
-    setCreatedRoomId(roomId)
-    setShowSuccessModal(true)
-    setLoading(false)
-  }
-
-  const handleSuccessContinue = () => {
-    setShowSuccessModal(false)
-    navigate(`/sala/${createdRoomId}`, { replace: true })
+    try {
+      const boardConfig = useCustomBoard
+        ? { rows: customRows, cols: customCols, mines: customMines }
+        : undefined
+      const roomId = await useRoomStore.getState().createRoom(roomName, selectedMode, selectedDifficulty, isPrivate, password, maxPlayers, boardConfig)
+      navigate(`/sala/${roomId}`, { replace: true, state: { justCreated: true } })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao criar sala')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -374,26 +371,6 @@ export function CreateRoomPage() {
           </form>
         </CardContent>
       </Card>
-
-      {/* Success Modal */}
-      <Modal open={showSuccessModal} onClose={() => setShowSuccessModal(false)} title="Sala Criada!">
-        <div className="text-center py-2">
-          <div className="w-16 h-16 rounded-full bg-success-soft grid place-items-center mx-auto mb-4 text-success">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <h3 className="font-heading font-bold text-h5 mb-2">Sala <span className="text-primary-600">{createdRoomId}</span> criada!</h3>
-          <p className="text-ink-muted text-body mb-4">Compartilhe o código ou o link para seus amigos entrarem.</p>
-          <div className="p-3 rounded-[14px] bg-surface-muted border border-border font-mono text-h6 font-bold text-primary-600">
-            {createdRoomId}
-          </div>
-        </div>
-        <ModalActions>
-          <Button variant="ghost" onClick={() => setShowSuccessModal(false)}>Fechar</Button>
-          <Button variant="primary" onClick={handleSuccessContinue}>Entrar na Sala</Button>
-        </ModalActions>
-      </Modal>
     </div>
   )
 }

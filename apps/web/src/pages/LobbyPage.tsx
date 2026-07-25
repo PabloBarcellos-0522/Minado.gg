@@ -7,6 +7,7 @@ import { Tabs, TabList, TabTrigger, TabContent } from '@/components/ui/Tabs'
 import { RoomCard } from '@/components/blocks/RoomCard'
 import { ModeGrid, GameModeCard } from '@/components/blocks/GameModeCard'
 import { Navbar } from '@/components/blocks/Navbar'
+import { useAuthStore } from '@/store/authStore'
 import { useRoomStore, type RoomWithName } from '@/store/roomStore'
 import type { GameMode, Difficulty } from '@minado/shared'
 
@@ -45,7 +46,7 @@ export function LobbyPage() {
 
   return (
     <div className="min-h-dvh flex flex-col">
-      <Navbar username="Jogador" avatarUrl="" />
+      <Navbar username={useAuthStore((s) => s.user?.username || 'Jogador')} avatarUrl="" />
 
       <main className="flex-1 p-5 max-w-[1400px] mx-auto w-full">
         {/* Header */}

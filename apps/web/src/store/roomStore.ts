@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { Room, GameMode, Difficulty, BoardConfig } from '@minado/shared'
-import { getSocket, onSocketEvent } from '@/lib/socket'
+import { getSocket, onSocketEvent, waitForConnection } from '@/lib/socket'
 import { useAuthStore } from './authStore'
 import { useGameStore } from './gameStore'
 
@@ -41,7 +41,10 @@ export const useRoomStore = create<RoomState>()((set, get) => ({
     if (socket.connected) set({ isConnected: true })
 
     const unsubs = [
-      onSocketEvent('connect', () => set({ isConnected: true })),
+      onSocketEvent('connect', () => {
+        set({ isConnected: true })
+        get().fetchRooms()
+      }),
       onSocketEvent('disconnect', () => set({ isConnected: false })),
       onSocketEvent('room:list', (rooms: unknown) => {
         set({ rooms: rooms as RoomWithName[] })
@@ -69,7 +72,8 @@ export const useRoomStore = create<RoomState>()((set, get) => ({
         }
       }),
       onSocketEvent('game:started', (data: unknown) => {
-        const { boardMeta, players } = data as {
+        const ev = data as {
+          board?: any
           boardMeta: { rows: number; cols: number; mines: number; mode: string }
           players: RoomWithName['players']
         }
@@ -79,17 +83,18 @@ export const useRoomStore = create<RoomState>()((set, get) => ({
             currentRoom: {
               ...currentRoom,
               status: 'playing',
-              players,
-              boardConfig: { rows: boardMeta.rows, cols: boardMeta.cols, mines: boardMeta.mines },
+              players: ev.players,
+              boardConfig: { rows: ev.boardMeta.rows, cols: ev.boardMeta.cols, mines: ev.boardMeta.mines },
             },
           })
         }
         useGameStore.getState().initBoard(
-          { rows: boardMeta.rows, cols: boardMeta.cols, mines: boardMeta.mines },
-          boardMeta.mode as any
+          { rows: ev.boardMeta.rows, cols: ev.boardMeta.cols, mines: ev.boardMeta.mines },
+          ev.boardMeta.mode as any,
+          ev.board
         )
         useGameStore.getState().setPlayers(
-          players.map((p: any) => ({ id: p.id, username: p.username, score: p.score || 0, color: '' }))
+          ev.players.map((p: any) => ({ id: p.id, username: p.username, score: p.score || 0, color: '' }))
         )
       }),
       onSocketEvent('error', (err: unknown) => {
@@ -102,88 +107,60 @@ export const useRoomStore = create<RoomState>()((set, get) => ({
   },
 
   fetchRooms: async () => {
-    set({ isLoading: true, error: null })
     const socket = getSocket()
-
-    if (socket.connected) {
-      socket.emit('room:list')
-      set({ isLoading: false })
+    if (!socket.connected) {
+      set({ rooms: [], isLoading: false })
       return
     }
-
-    try {
-      await new Promise((r) => setTimeout(r, 300))
-      const mockRooms: RoomWithName[] = [
-        { id: 'ABC123', name: 'Turbinados', hostId: '1', mode: 'competitive', isPrivate: false, maxPlayers: 6, status: 'waiting', players: [], boardConfig: { rows: 16, cols: 16, mines: 40 }, difficulty: 'medium' },
-        { id: 'DEF456', name: 'Amigos Only', hostId: '2', mode: 'cooperative', isPrivate: true, maxPlayers: 4, status: 'waiting', players: [], boardConfig: { rows: 9, cols: 9, mines: 10 }, difficulty: 'easy' },
-        { id: 'GHI789', name: 'Ranked BR', hostId: '3', mode: 'battle-royale', isPrivate: false, maxPlayers: 20, status: 'waiting', players: [], boardConfig: { rows: 9, cols: 9, mines: 10 }, difficulty: 'hard' },
-      ]
-      set({ rooms: mockRooms, isLoading: false })
-    } catch {
-      set({ error: 'Falha ao carregar salas', isLoading: false })
-    }
+    socket.emit('room:list')
   },
 
   createRoom: async (name, mode, difficulty, isPrivate, password, maxPlayers, boardConfig) => {
     set({ isLoading: true, error: null })
+    try {
+      await waitForConnection()
+    } catch {
+      set({ error: 'Sem conexão com o servidor', isLoading: false })
+      throw new Error('Sem conexão com o servidor')
+    }
     const socket = getSocket()
 
-    if (socket.connected) {
-      return new Promise((resolve) => {
-        const onCreated = (room: RoomWithName) => {
-          socket.off('room:created', onCreated)
-          set({ currentRoom: room, isLoading: false })
-          resolve(room.id)
-        }
-        socket.on('room:created', onCreated)
-        socket.emit('room:create', { name, mode, difficulty, isPrivate, password, maxPlayers, boardConfig })
-      })
-    }
-
-    await new Promise((r) => setTimeout(r, 500))
-    const roomId = Math.random().toString(36).substring(2, 8).toUpperCase()
-    const config = boardConfig || { rows: 16, cols: 16, mines: 40 }
-    const userId = useAuthStore.getState().user?.id || '1'
-    const username = useAuthStore.getState().user?.username || 'Você'
-    const newRoom: RoomWithName = {
-      id: roomId, name, hostId: userId, mode, isPrivate, maxPlayers,
-      status: 'waiting', players: [
-        { id: userId, username, score: 0, isReady: false, isHost: true },
-      ],
-      boardConfig: config, difficulty,
-    }
-    set({ currentRoom: newRoom, isLoading: false })
-    return roomId
+    return new Promise((resolve, reject) => {
+      const onCreated = (room: RoomWithName) => {
+        socket.off('room:created', onCreated)
+        socket.off('error', onError)
+        set({ currentRoom: room, isLoading: false })
+        resolve(room.id)
+      }
+      const onError = (err: { message: string }) => {
+        socket.off('room:created', onCreated)
+        socket.off('error', onError)
+        set({ error: err.message, isLoading: false })
+        reject(new Error(err.message))
+      }
+      socket.on('room:created', onCreated)
+      socket.on('error', onError)
+      socket.emit('room:create', { name, mode, difficulty, isPrivate, password, maxPlayers, boardConfig })
+    })
   },
 
   joinRoom: async (roomId: string) => {
     set({ isLoading: true, error: null })
-    const socket = getSocket()
-    const user = useAuthStore.getState().user
-
-    if (socket.connected) {
-      socket.emit('room:join', { roomId, username: user?.username || 'Jogador' })
-      set({ isLoading: false })
+    try {
+      await waitForConnection()
+    } catch {
+      set({ error: 'Sem conexão com o servidor', isLoading: false })
       return
     }
-
-    await new Promise((r) => setTimeout(r, 300))
-    const userId = useAuthStore.getState().user?.id || '1'
-    const username = useAuthStore.getState().user?.username || 'Você'
-    const mockRoom: RoomWithName = {
-      id: roomId, name: 'Sala ' + roomId, hostId: 'mock-host', mode: 'competitive',
-      isPrivate: false, maxPlayers: 6, status: 'waiting',
-      players: [
-        { id: 'mock-host', username: 'Anfitrião', score: 0, isReady: true, isHost: true },
-        { id: userId, username, score: 0, isReady: false, isHost: false },
-        { id: 'mock-3', username: 'Carlos', score: 0, isReady: false, isHost: false },
-      ],
-      boardConfig: { rows: 16, cols: 16, mines: 40 }, difficulty: 'medium',
-    }
-    set({ currentRoom: mockRoom, isLoading: false })
+    const socket = getSocket()
+    const user = useAuthStore.getState().user
+    socket.emit('room:join', { roomId, username: user?.username || 'Jogador' })
+    set({ isLoading: false })
   },
 
   leaveRoom: () => {
+    const { currentRoom } = get()
+    if (!currentRoom) return
     const socket = getSocket()
     if (socket.connected) {
       socket.emit('room:leave')
@@ -216,11 +193,6 @@ export const useRoomStore = create<RoomState>()((set, get) => ({
     const socket = getSocket()
     if (socket.connected) {
       socket.emit('room:start')
-      return
-    }
-    const { currentRoom } = get()
-    if (currentRoom) {
-      set({ currentRoom: { ...currentRoom, status: 'playing' } })
     }
   },
 
