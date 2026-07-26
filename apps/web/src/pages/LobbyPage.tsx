@@ -133,16 +133,17 @@ export function LobbyPage() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredRooms.map((room) => (
-                  <RoomCard
-                    key={room.id}
-                    id={room.id}
-                    name={room.name}
-                    mode={room.mode}
-                    difficulty={room.difficulty}
-                    playerCount={room.players.length}
-                    maxPlayers={room.maxPlayers}
-                    isPrivate={room.isPrivate}
-                  />
+                    <RoomCard
+                      key={room.id}
+                      id={room.id}
+                      name={room.name}
+                      mode={room.mode}
+                      difficulty={room.difficulty}
+                      playerCount={room.players.length}
+                      maxPlayers={room.maxPlayers}
+                      isPrivate={room.isPrivate}
+                      timeLimit={room.timeLimit}
+                    />
                 ))}
               </div>
             )}

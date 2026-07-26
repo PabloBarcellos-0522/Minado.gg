@@ -43,6 +43,7 @@ export interface Room {
   players: Player[]
   boardConfig: BoardConfig
   difficulty: Difficulty
+  timeLimit: number
 }
 
 export interface MatchResult {

@@ -63,6 +63,7 @@ export const useGameStore = create<{
   gameStartedAt: string;
   isOnline: boolean;
   removedForInactivity: boolean;
+  timeRemaining: number;
 
   initBoard: (config: BoardConfig, mode?: GameMode, board?: Board) => void;
   revealCell: (row: number, col: number) => void;
@@ -93,6 +94,7 @@ export const useGameStore = create<{
   gameStartedAt: "",
   isOnline: false,
   removedForInactivity: false,
+  timeRemaining: 0,
 
   initSocketListeners: () => {
     const socket = getSocket();
@@ -104,13 +106,14 @@ export const useGameStore = create<{
       onSocketEvent("game:started", (data: unknown) => {
         const ev = data as {
           board: Board;
-          boardMeta: { rows: number; cols: number; mines: number; mode: string };
+          boardMeta: { rows: number; cols: number; mines: number; mode: string; timeLimit?: number };
           players: Array<{ id: string; username: string; score?: number }>;
         };
         if (!ev.board) {
           console.error("[game:started] server did not send board — aborting");
           return;
         }
+        const timeLimit = ev.boardMeta.timeLimit || 0
         set({
           board: ev.board,
           boardConfig: {
@@ -121,6 +124,7 @@ export const useGameStore = create<{
           gameMode: ev.boardMeta.mode as GameMode,
           gameState: "playing",
           timeElapsed: 0,
+          timeRemaining: timeLimit,
           flagsPlaced: 0,
           firstClick: true,
           showBoom: false,
@@ -211,7 +215,13 @@ export const useGameStore = create<{
         };
         const state = get();
         const isWin = ev.result === "win";
-        set({ gameState: isWin ? "won" : "lost", showConfetti: isWin, showBoom: !isWin });
+        const isTimeout = ev.result === "timeout";
+        set({
+          gameState: isWin ? "won" : "lost",
+          showConfetti: isWin,
+          showBoom: !isWin && !isTimeout,
+          timeRemaining: 0,
+        });
 
         const endedAt = new Date().toISOString();
         const scoreboard = ev.scoreboard.map((entry) => {
@@ -293,6 +303,7 @@ export const useGameStore = create<{
       showConfetti: false,
       gameStartedAt: new Date().toISOString(),
       lastMatchResult: null,
+      timeRemaining: 0,
     });
   },
 
@@ -301,6 +312,7 @@ export const useGameStore = create<{
     if (state.gameState !== "playing") return;
 
     if (state.isOnline) {
+      if (state.timeRemaining === 0 && state.gameMode !== "cooperative") return
       getSocket().emit("game:reveal", { cellId: `${row}-${col}` });
       return;
     }
@@ -409,6 +421,7 @@ export const useGameStore = create<{
     if (state.gameState !== "playing") return;
 
     if (state.isOnline) {
+      if (state.timeRemaining === 0 && state.gameMode !== "cooperative") return
       getSocket().emit("game:flag", { cellId: `${row}-${col}` });
       return;
     }
@@ -420,22 +433,12 @@ export const useGameStore = create<{
       r.map((c) => (c.row === row && c.col === col ? { ...c, isFlagged: !c.isFlagged } : c)),
     );
 
-    const nowFlagged = !cell.isFlagged;
-    let scoreDelta = 0;
-    if (nowFlagged && cell.hasMine) scoreDelta = calculateScore("flag-correct");
-    else if (!nowFlagged && cell.hasMine) scoreDelta = calculateScore("flag-wrong");
-    else if (nowFlagged && !cell.hasMine) scoreDelta = calculateScore("flag-wrong");
-
-    const players = state.players.map((p) =>
-      p.id === state.currentUserId ? { ...p, score: p.score + scoreDelta } : p,
-    );
-
     const flagsPlaced = newBoard.reduce(
       (acc, r) => acc + r.reduce((a, c) => a + (c.isFlagged ? 1 : 0), 0),
       0,
     );
 
-    set({ board: newBoard, players, flagsPlaced });
+    set({ board: newBoard, flagsPlaced });
   },
 
   setPlayers: (players) => set({ players }),
@@ -444,7 +447,10 @@ export const useGameStore = create<{
 
   addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
 
-  tick: () => set((state) => ({ timeElapsed: state.timeElapsed + 1 })),
+  tick: () => set((state) => ({
+    timeElapsed: state.timeElapsed + 1,
+    timeRemaining: state.timeRemaining > 0 ? state.timeRemaining - 1 : 0,
+  })),
 
   resetGame: () =>
     set({
@@ -459,6 +465,7 @@ export const useGameStore = create<{
       messages: [],
       lastMatchResult: null,
       removedForInactivity: false,
+      timeRemaining: 0,
     }),
 
   setShowBoom: (show) => set({ showBoom: show }),

@@ -1,9 +1,23 @@
 import type { Board, BoardConfig, Player, GameMode } from '@minado/shared'
 import { generateBoard, cloneBoard, floodFill, checkWin, calculateScore } from '@minado/shared'
 
+const CORRECT_FLAG_POINTS = 50
+const REVEALED_CELL_POINTS = 5
+const WRONG_FLAG_PENALTY = 25
+
+const COOP_TIME_BONUS_MAX = 600
+
 export interface GameScoreEntry {
   playerId: string
   score: number
+}
+
+export interface EndGameBonus {
+  total: number
+  correctFlags: number
+  wrongFlags: number
+  revealedSafe: number
+  totalSafe: number
 }
 
 export interface PlayerBoardData {
@@ -19,8 +33,10 @@ export interface GameState {
   endedAt?: number
   mode: GameMode
   playerBoards: Map<string, PlayerBoardData>
-  // cooperative mode: all players share this board id
   sharedBoardId?: string
+  timeLimit: number
+  timerHandle?: NodeJS.Timeout
+  endedByTimer?: boolean
 }
 
 function extractMinePositions(board: Board): Set<string> {
@@ -33,10 +49,34 @@ function extractMinePositions(board: Board): Set<string> {
   return pos
 }
 
+function calculateEndGameBonus(board: Board): EndGameBonus {
+  let correctFlags = 0
+  let wrongFlags = 0
+  let revealedSafe = 0
+  let totalSafe = 0
+
+  for (const row of board) {
+    for (const cell of row) {
+      if (cell.hasMine) {
+        if (cell.isFlagged) correctFlags++
+      } else {
+        totalSafe++
+        if (cell.isRevealed) revealedSafe++
+        if (cell.isFlagged) wrongFlags++
+      }
+    }
+  }
+
+  const total = correctFlags * CORRECT_FLAG_POINTS + revealedSafe * REVEALED_CELL_POINTS - wrongFlags * WRONG_FLAG_PENALTY
+  return { total, correctFlags, wrongFlags, revealedSafe, totalSafe }
+}
+
 export class GameManager {
   private games: Map<string, GameState> = new Map()
 
-  startGame(roomId: string, config: BoardConfig, players: Player[], mode: GameMode): GameState {
+  onGameEnded?: (roomId: string, scoreboard: GameScoreEntry[], reason: 'win' | 'timeout') => void
+
+  startGame(roomId: string, config: BoardConfig, players: Player[], mode: GameMode, timeLimit: number): GameState {
     const scores = new Map<string, GameScoreEntry>()
     for (const p of players) {
       scores.set(p.id, { playerId: p.id, score: 0 })
@@ -57,7 +97,6 @@ export class GameManager {
         playerBoards.set(p.id, { board, minePositions: extractMinePositions(board) })
       }
     } else {
-      // competitive / others: same mine layout, independent per-player boards
       const template = generateBoard(config.rows, config.cols, config.mines)
       const minePos = extractMinePositions(template)
       for (const p of players) {
@@ -73,6 +112,11 @@ export class GameManager {
       mode,
       playerBoards,
       sharedBoardId: mode === 'cooperative' ? 'shared' : undefined,
+      timeLimit,
+    }
+
+    if (timeLimit > 0) {
+      state.timerHandle = setTimeout(() => this.endByTimer(roomId), timeLimit * 1000)
     }
 
     this.games.set(roomId, state)
@@ -81,6 +125,16 @@ export class GameManager {
 
   getGame(roomId: string): GameState | undefined {
     return this.games.get(roomId)
+  }
+
+  getTimeLimit(roomId: string): number {
+    const state = this.games.get(roomId)
+    return state?.timeLimit || 0
+  }
+
+  isEndedByTimer(roomId: string): boolean {
+    const state = this.games.get(roomId)
+    return state?.endedByTimer || false
   }
 
   getPlayerBoard(roomId: string, playerId: string): Board | null {
@@ -109,6 +163,26 @@ export class GameManager {
     if (state.scores.size === 0) {
       this.games.delete(roomId)
     }
+  }
+
+  endByTimer(roomId: string): GameScoreEntry[] {
+    const state = this.games.get(roomId)
+    if (!state) return []
+
+    state.endedByTimer = true
+    state.endedAt = Date.now()
+
+    for (const [playerId, entry] of state.scores) {
+      const board = this.getPlayerBoard(roomId, playerId)
+      if (board) {
+        const bonus = calculateEndGameBonus(board)
+        entry.score += bonus.total
+      }
+    }
+
+    const scoreboard = this.getScoreboard(roomId)
+    this.onGameEnded?.(roomId, scoreboard, 'timeout')
+    return scoreboard
   }
 
   revealCell(roomId: string, playerId: string, row: number, col: number):
@@ -159,9 +233,24 @@ export class GameManager {
 
     entry.score += delta
 
-    if (checkWin(board)) {
+    if (state.mode === 'cooperative' && checkWin(board)) {
       entry.score += calculateScore('win')
+
+      const elapsed = (Date.now() - state.startedAt) / 1000
+      const timeBonus = Math.max(0, Math.round(COOP_TIME_BONUS_MAX * ((180 - elapsed) / 60)))
+      entry.score += timeBonus
+
+      const bonus = calculateEndGameBonus(board)
+      entry.score += bonus.total
+
       state.endedAt = Date.now()
+
+      if (state.timerHandle) {
+        clearTimeout(state.timerHandle)
+        delete state.timerHandle
+      }
+
+      this.onGameEnded?.(roomId, this.getScoreboard(roomId), 'win')
 
       return {
         success: true,
@@ -192,20 +281,12 @@ export class GameManager {
     if (cell.isRevealed) return { success: false, error: 'Célula já revelada' }
 
     cell.isFlagged = !cell.isFlagged
-    const isPlacing = cell.isFlagged
-
-    let delta = 0
-    if (isPlacing && cell.hasMine) delta = calculateScore('flag-correct')
-    else if (!isPlacing && cell.hasMine) delta = calculateScore('flag-wrong')
-    else if (isPlacing && !cell.hasMine) delta = calculateScore('flag-wrong')
-
-    entry.score += delta
 
     return {
       success: true,
       cellId: `${row}-${col}`,
       flagged: cell.isFlagged,
-      delta,
+      delta: 0,
     }
   }
 
@@ -219,6 +300,10 @@ export class GameManager {
   }
 
   removeGame(roomId: string): void {
+    const state = this.games.get(roomId)
+    if (state?.timerHandle) {
+      clearTimeout(state.timerHandle)
+    }
     this.games.delete(roomId)
   }
 }

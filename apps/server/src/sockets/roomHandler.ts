@@ -15,10 +15,11 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
     password?: string
     maxPlayers: number
     boardConfig?: { rows: number; cols: number; mines: number }
+    timeLimit: number
   }) => {
     const config = data.boardConfig || DIFFICULTY_CONFIG[data.difficulty as keyof typeof DIFFICULTY_CONFIG] || DIFFICULTY_CONFIG.medium
     const userId = getUserId(socket)
-    console.log(`[room:create] socket=${socket.id} userId=${userId} difficulty=${data.difficulty} name=${data.name}`)
+    console.log(`[room:create] socket=${socket.id} userId=${userId} difficulty=${data.difficulty} name=${data.name} timeLimit=${data.timeLimit}`)
 
     const room = roomManager.createRoom({
       name: data.name,
@@ -31,6 +32,7 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
       password: data.password,
       maxPlayers: data.maxPlayers,
       boardConfig: config,
+      timeLimit: data.timeLimit,
     })
     console.log(`[room:create] room.id=${room.id} totalRooms=${roomManager.getRoomCount()} socketToRoom size=${(roomManager as any).socketToRoom?.size}`)
 
@@ -43,6 +45,7 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
       isPrivate: room.isPrivate,
       maxPlayers: room.maxPlayers,
       boardConfig: room.boardConfig,
+      timeLimit: room.timeLimit,
       players: room.players,
       status: room.status,
     })
@@ -98,6 +101,7 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
               cols: room.boardConfig.cols,
               mines: room.boardConfig.mines,
               mode: room.mode,
+              timeLimit: room.timeLimit,
             },
             gameMode: room.mode,
             players: room.players.map((p) => ({
@@ -207,9 +211,10 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
       return
     }
 
-    gameManager.startGame(room.id, room.boardConfig, room.players, room.mode)
+    gameManager.startGame(room.id, room.boardConfig, room.players, room.mode, room.timeLimit)
     roomManager.startGame(room.id)
 
+    const timeLimit = room.timeLimit
     if (room.mode === 'cooperative') {
       const board = gameManager.getBoard(room.id)
       io.to(room.id).emit('game:started', {
@@ -219,6 +224,7 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
           cols: room.boardConfig.cols,
           mines: room.boardConfig.mines,
           mode: room.mode,
+          timeLimit,
         },
         players: room.players,
       })
@@ -235,6 +241,7 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
               cols: room.boardConfig.cols,
               mines: room.boardConfig.mines,
               mode: room.mode,
+              timeLimit,
             },
             players: room.players,
           })

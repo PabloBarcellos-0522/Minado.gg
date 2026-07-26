@@ -11,6 +11,7 @@ interface RoomCardProps {
   playerCount: number
   maxPlayers: number
   isPrivate?: boolean
+  timeLimit?: number
 }
 
 const modeLabels: Record<GameMode, string> = {
@@ -36,6 +37,13 @@ const difficultyLabels: Record<Difficulty, string> = {
   expert: 'Expert',
 }
 
+const formatTimeLimit = (seconds: number) => {
+  if (seconds <= 0) return 'Sem limite'
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return s > 0 ? `${m}:${s.toString().padStart(2, '0')}` : `${m} min`
+}
+
 export function RoomCard({
   id,
   name,
@@ -44,6 +52,7 @@ export function RoomCard({
   playerCount,
   maxPlayers,
   isPrivate = false,
+  timeLimit,
 }: RoomCardProps) {
   return (
     <Link
@@ -65,6 +74,12 @@ export function RoomCard({
             <span className="text-small text-ink-muted">
               {difficultyLabels[difficulty]}
             </span>
+            {timeLimit !== undefined && timeLimit > 0 && (
+              <span className="text-small text-ink-muted">·</span>
+            )}
+            {timeLimit !== undefined && timeLimit > 0 && (
+              <span className="text-small text-ink-muted">{formatTimeLimit(timeLimit)}</span>
+            )}
           </div>
         </div>
 

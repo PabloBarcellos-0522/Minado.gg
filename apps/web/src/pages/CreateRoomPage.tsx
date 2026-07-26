@@ -73,6 +73,23 @@ const modeOptions: { value: GameMode; label: string; description: string; icon: 
   },
 ]
 
+const DEFAULT_TIME_LIMITS: Record<GameMode, number> = {
+  competitive: 180,
+  'multi-board': 180,
+  cooperative: 0,
+  'battle-royale': 300,
+  'fog-of-war': 300,
+}
+
+const TIME_OPTIONS = [
+  { value: 60, label: '1 min' },
+  { value: 120, label: '2 min' },
+  { value: 180, label: '3 min' },
+  { value: 300, label: '5 min' },
+  { value: 600, label: '10 min' },
+  { value: 900, label: '15 min' },
+]
+
 const difficultyOptions: { value: Difficulty; label: string; description: string }[] = [
   { value: 'easy', label: 'Fácil', description: '9×9, 10 minas — Para iniciantes' },
   { value: 'medium', label: 'Médio', description: '16×16, 40 minas — O clássico' },
@@ -97,6 +114,12 @@ export function CreateRoomPage() {
   const [useCustomBoard, setUseCustomBoard] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [selectedTimeLimit, setSelectedTimeLimit] = useState(DEFAULT_TIME_LIMITS[preSelectedMode || 'competitive'])
+
+  const handleModeChange = (mode: GameMode) => {
+    setSelectedMode(mode)
+    setSelectedTimeLimit(DEFAULT_TIME_LIMITS[mode])
+  }
 
   const selectedModeInfo = modeOptions.find((m) => m.value === selectedMode)
   const difficultyConfig = DIFFICULTY_CONFIG[selectedDifficulty]
@@ -141,7 +164,8 @@ export function CreateRoomPage() {
       const boardConfig = useCustomBoard
         ? { rows: customRows, cols: customCols, mines: customMines }
         : undefined
-      const roomId = await useRoomStore.getState().createRoom(roomName, selectedMode, selectedDifficulty, isPrivate, password, maxPlayers, boardConfig)
+      const timeLimit = selectedMode === 'cooperative' ? 0 : selectedTimeLimit
+      const roomId = await useRoomStore.getState().createRoom(roomName, selectedMode, selectedDifficulty, isPrivate, password, maxPlayers, boardConfig, timeLimit)
       navigate(`/sala/${roomId}`, { replace: true, state: { justCreated: true } })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao criar sala')
@@ -182,7 +206,7 @@ export function CreateRoomPage() {
                     <button
                       key={mode.value}
                       type="button"
-                      onClick={() => setSelectedMode(mode.value)}
+                      onClick={() => handleModeChange(mode.value)}
                       className={[
                         'relative py-3 px-2 rounded-[14px] text-left gap-2',
                         'font-heading font-bold text-small',
@@ -337,6 +361,44 @@ export function CreateRoomPage() {
                     : 'Mínimo 2, máximo 16 jogadores'}
                 </p>
               </div>
+
+              {/* Timer */}
+              <div>
+                <Label htmlFor="timeLimit">Limite de Tempo</Label>
+                {selectedMode === 'cooperative' ? (
+                  <div className="p-3 rounded-[14px] bg-surface border border-border">
+                    <p className="font-heading font-bold text-small text-ink">Sem limite</p>
+                    <p className="text-[0.75rem] text-ink-muted">O cooperativo não possui limite de tempo</p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <input
+                      id="timeLimit"
+                      type="range"
+                      min="1"
+                      max="5"
+                      value={TIME_OPTIONS.findIndex((o) => o.value === selectedTimeLimit) >= 0
+                        ? TIME_OPTIONS.findIndex((o) => o.value === selectedTimeLimit)
+                        : 2}
+                      onChange={(e) => {
+                        const idx = parseInt(e.target.value)
+                        setSelectedTimeLimit(TIME_OPTIONS[idx].value)
+                      }}
+                      className="flex-1 h-2 bg-surface rounded-full appearance-none cursor-pointer accent-primary-500"
+                    />
+                    <span className="font-heading font-bold text-h5 text-ink min-w-[4rem] text-center">
+                      {selectedTimeLimit >= 60
+                        ? `${Math.floor(selectedTimeLimit / 60)}:${(selectedTimeLimit % 60).toString().padStart(2, '0')}`
+                        : `${selectedTimeLimit}s`}
+                    </span>
+                  </div>
+                )}
+                <p className="text-[0.75rem] text-ink-muted mt-1">
+                  {selectedMode === 'cooperative'
+                    ? 'Jogue sem pressão!'
+                    : 'O jogo encerra automaticamente quando o tempo acabar'}
+                </p>
+              </div>
             </div>
 
             {/* Preview */}
@@ -355,6 +417,12 @@ export function CreateRoomPage() {
                 <span className="font-heading font-bold text-ink">{isPrivate ? 'Privada' : 'Pública'}</span>
                 <span className="text-ink-muted">Máx. jogadores</span>
                 <span className="font-heading font-bold text-ink">{maxPlayers}</span>
+                <span className="text-ink-muted">Limite de tempo</span>
+                <span className="font-heading font-bold text-ink">
+                  {selectedMode === 'cooperative'
+                    ? 'Sem limite'
+                    : `${Math.floor(selectedTimeLimit / 60)}:${(selectedTimeLimit % 60).toString().padStart(2, '0')} min`}
+                </span>
               </div>
             </div>
 

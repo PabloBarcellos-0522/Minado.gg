@@ -46,6 +46,7 @@ export function MatchPage() {
   const boardConfig = useGameStore((s) => s.boardConfig)
   const currentUserId = useGameStore((s) => s.currentUserId)
   const removedForInactivity = useGameStore((s) => s.removedForInactivity)
+  const timeRemaining = useGameStore((s) => s.timeRemaining)
 
   const revealCell = useGameStore((s) => s.revealCell)
   const flagCell = useGameStore((s) => s.flagCell)
@@ -180,11 +181,13 @@ export function MatchPage() {
           {/* HUD Top */}
           <div className="w-full max-w-[600px] flex flex-wrap items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2 px-4 py-2 rounded-[14px] bg-surface border border-border">
-                <svg className="w-5 h-5 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className={`flex items-center gap-2 px-4 py-2 rounded-[14px] border ${timeRemaining > 0 && timeRemaining < 30 ? 'bg-error-soft border-error text-error' : 'bg-surface border-border'}`}>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="font-heading font-bold text-h5 text-ink tabular-nums">{formatTime(timeElapsed)}</span>
+                <span className={`font-heading font-bold text-h5 tabular-nums ${timeRemaining > 0 && timeRemaining < 30 ? 'text-error' : 'text-ink'}`}>
+                  {timeRemaining > 0 ? formatTime(timeRemaining) : formatTime(timeElapsed)}
+                </span>
               </div>
               <div className="flex items-center gap-2 px-4 py-2 rounded-[14px] bg-surface border border-border">
                 <svg className="w-5 h-5 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">

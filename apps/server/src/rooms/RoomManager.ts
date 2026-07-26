@@ -29,6 +29,7 @@ export class RoomManager {
     password?: string
     maxPlayers: number
     boardConfig: BoardConfig
+    timeLimit: number
   }): RoomData {
     const id = this.generateRoomId()
     const room: RoomData = {
@@ -40,6 +41,7 @@ export class RoomManager {
       isPrivate: data.isPrivate,
       password: data.password,
       maxPlayers: data.maxPlayers,
+      timeLimit: data.timeLimit,
       status: 'waiting',
       players: [{
         id: data.hostId,

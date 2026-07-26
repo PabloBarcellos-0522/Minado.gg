@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import type { Room, GameMode, Difficulty, BoardConfig } from '@minado/shared'
 import { getSocket, onSocketEvent, waitForConnection } from '@/lib/socket'
 import { useAuthStore } from './authStore'
-import { useGameStore } from './gameStore'
 
 export interface RoomWithName extends Room {
   name: string
@@ -16,7 +15,7 @@ interface RoomState {
   isConnected: boolean
 
   fetchRooms: () => Promise<void>
-  createRoom: (name: string, mode: GameMode, difficulty: Difficulty, isPrivate: boolean, password: string, maxPlayers: number, boardConfig?: BoardConfig) => Promise<string>
+  createRoom: (name: string, mode: GameMode, difficulty: Difficulty, isPrivate: boolean, password: string, maxPlayers: number, boardConfig?: BoardConfig, timeLimit?: number) => Promise<string>
   joinRoom: (roomId: string) => Promise<void>
   leaveRoom: () => void
   toggleReady: () => void
@@ -88,14 +87,6 @@ export const useRoomStore = create<RoomState>()((set, get) => ({
             },
           })
         }
-        useGameStore.getState().initBoard(
-          { rows: ev.boardMeta.rows, cols: ev.boardMeta.cols, mines: ev.boardMeta.mines },
-          ev.boardMeta.mode as any,
-          ev.board
-        )
-        useGameStore.getState().setPlayers(
-          ev.players.map((p: any) => ({ id: p.id, username: p.username, score: p.score || 0, color: '' }))
-        )
       }),
       onSocketEvent('error', (err: unknown) => {
         const { message } = err as { code: string; message: string }
@@ -115,7 +106,7 @@ export const useRoomStore = create<RoomState>()((set, get) => ({
     socket.emit('room:list')
   },
 
-  createRoom: async (name, mode, difficulty, isPrivate, password, maxPlayers, boardConfig) => {
+  createRoom: async (name, mode, difficulty, isPrivate, password, maxPlayers, boardConfig, timeLimit) => {
     set({ isLoading: true, error: null })
     try {
       await waitForConnection()
@@ -140,7 +131,7 @@ export const useRoomStore = create<RoomState>()((set, get) => ({
       }
       socket.on('room:created', onCreated)
       socket.on('error', onError)
-      socket.emit('room:create', { name, mode, difficulty, isPrivate, password, maxPlayers, boardConfig })
+      socket.emit('room:create', { name, mode, difficulty, isPrivate, password, maxPlayers, boardConfig, timeLimit })
     })
   },
 

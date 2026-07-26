@@ -28,6 +28,17 @@ const io = new Server(httpServer, {
 const gameManager = new GameManager()
 const roomManager = new RoomManager()
 
+gameManager.onGameEnded = (roomId, scoreboard, reason) => {
+  io.to(roomId).emit('game:ended', {
+    result: reason,
+    scoreboard: scoreboard.map((entry, i) => ({
+      playerId: entry.playerId,
+      score: entry.score,
+      rank: i + 1,
+    })),
+  })
+}
+
 roomManager.onPlayerRemoved = (roomId, playerId, playerUsername) => {
   gameManager.removePlayerBoard(roomId, playerId)
   io.to(roomId).emit('room:playerLeft', { playerId })

@@ -24,7 +24,7 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
 
     let gameState = gameManager.getGame(room.id)
     if (!gameState) {
-      gameManager.startGame(room.id, room.boardConfig, room.players, room.mode)
+      gameManager.startGame(room.id, room.boardConfig, room.players, room.mode, room.timeLimit || 0)
       gameState = gameManager.getGame(room.id)!
     }
 
@@ -70,15 +70,6 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
     })
 
     if (result.gameEnded) {
-      const scoreboard = gameManager.getScoreboard(room.id)
-      io.to(room.id).emit('game:ended', {
-        result: 'win',
-        scoreboard: scoreboard.map((entry, i) => ({
-          playerId: entry.playerId,
-          score: entry.score,
-          rank: i + 1,
-        })),
-      })
       gameManager.removeGame(room.id)
     }
   })
@@ -104,14 +95,6 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
       playerId,
       flagged: result.flagged,
     })
-
-    if (result.delta !== 0) {
-      io.to(room.id).emit('game:scoreUpdate', {
-        playerId,
-        delta: result.delta,
-        total: (gameManager.getGame(room.id)?.scores.get(playerId)?.score || 0),
-      })
-    }
   })
 
   socket.on('game:ping', (data: { type: string }) => {
