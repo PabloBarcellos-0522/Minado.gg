@@ -35,26 +35,26 @@ function ScrollToTop() {
 }
 
 function SocketManager() {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  const gameListenerInit = useGameStore((s) => s.initSocketListeners)
-  const roomListenerInit = useRoomStore((s) => s.initSocketListeners)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const gameListenerInit = useGameStore((s) => s.initSocketListeners);
+  const roomListenerInit = useRoomStore((s) => s.initSocketListeners);
 
   useEffect(() => {
     if (isAuthenticated) {
-      connectSocket()
-      const cleanup1 = gameListenerInit()
-      const cleanup2 = roomListenerInit()
-      const auth = useAuthStore.getState()
-      auth.fetchMe()
+      connectSocket();
+      const cleanup1 = gameListenerInit();
+      const cleanup2 = roomListenerInit();
+      const auth = useAuthStore.getState();
+      auth.fetchMe();
       return () => {
-        cleanup1()
-        cleanup2()
-        disconnectSocket()
-      }
+        cleanup1();
+        cleanup2();
+        disconnectSocket();
+      };
     }
-  }, [isAuthenticated, gameListenerInit, roomListenerInit])
+  }, [isAuthenticated, gameListenerInit, roomListenerInit]);
 
-  return null
+  return null;
 }
 
 function App() {

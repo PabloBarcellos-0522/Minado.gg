@@ -1,11 +1,13 @@
+import { generateBoard, cloneBoard, floodFill, isBoardComplete, calculateScore } from '@minado/shared'
 import type { Board, BoardConfig, Player, GameMode } from '@minado/shared'
-import { generateBoard, cloneBoard, floodFill, checkWin, calculateScore } from '@minado/shared'
 
 const CORRECT_FLAG_POINTS = 50
 const REVEALED_CELL_POINTS = 5
 const WRONG_FLAG_PENALTY = 25
 
 const COOP_TIME_BONUS_MAX = 600
+
+export type PlayerStatus = 'playing' | 'boardComplete' | 'eliminated'
 
 export interface GameScoreEntry {
   playerId: string
@@ -37,7 +39,10 @@ export interface GameState {
   timeLimit: number
   timerHandle?: NodeJS.Timeout
   endedByTimer?: boolean
+  playerStatus: Map<string, PlayerStatus>
 }
+
+export type GameEndReason = 'win' | 'timeout' | 'complete' | 'eliminated' | 'last_standing'
 
 function extractMinePositions(board: Board): Set<string> {
   const pos = new Set<string>()
@@ -74,12 +79,16 @@ function calculateEndGameBonus(board: Board): EndGameBonus {
 export class GameManager {
   private games: Map<string, GameState> = new Map()
 
-  onGameEnded?: (roomId: string, scoreboard: GameScoreEntry[], reason: 'win' | 'timeout') => void
+  onGameEnded?: (roomId: string, scoreboard: GameScoreEntry[], reason: GameEndReason) => void
+  onPlayerEliminated?: (roomId: string, playerId: string) => void
+  onPlayerBoardComplete?: (roomId: string, playerId: string) => void
 
   startGame(roomId: string, config: BoardConfig, players: Player[], mode: GameMode, timeLimit: number): GameState {
     const scores = new Map<string, GameScoreEntry>()
+    const playerStatus = new Map<string, PlayerStatus>()
     for (const p of players) {
       scores.set(p.id, { playerId: p.id, score: 0 })
+      playerStatus.set(p.id, 'playing')
     }
 
     const playerBoards = new Map<string, PlayerBoardData>()
@@ -113,6 +122,7 @@ export class GameManager {
       playerBoards,
       sharedBoardId: mode === 'cooperative' ? 'shared' : undefined,
       timeLimit,
+      playerStatus,
     }
 
     if (timeLimit > 0) {
@@ -125,6 +135,11 @@ export class GameManager {
 
   getGame(roomId: string): GameState | undefined {
     return this.games.get(roomId)
+  }
+
+  getPlayerStatus(roomId: string, playerId: string): PlayerStatus {
+    const state = this.games.get(roomId)
+    return state?.playerStatus.get(playerId) || 'playing'
   }
 
   getTimeLimit(roomId: string): number {
@@ -160,14 +175,38 @@ export class GameManager {
       state.playerBoards.delete(playerId)
     }
     state.scores.delete(playerId)
+    state.playerStatus.delete(playerId)
     if (state.scores.size === 0) {
       this.games.delete(roomId)
     }
   }
 
+  private checkAllPlayersDone(state: GameState): boolean {
+    for (const status of state.playerStatus.values()) {
+      if (status === 'playing') return false
+    }
+    return true
+  }
+
+  private endGame(roomId: string, reason: GameEndReason): void {
+    const state = this.games.get(roomId)
+    if (!state) return
+    if (state.endedAt) return
+
+    state.endedAt = Date.now()
+
+    if (state.timerHandle) {
+      clearTimeout(state.timerHandle)
+      delete state.timerHandle
+    }
+
+    this.onGameEnded?.(roomId, this.getScoreboard(roomId), reason)
+  }
+
   endByTimer(roomId: string): GameScoreEntry[] {
     const state = this.games.get(roomId)
     if (!state) return []
+    if (state.endedAt) return []
 
     state.endedByTimer = true
     state.endedAt = Date.now()
@@ -186,10 +225,15 @@ export class GameManager {
   }
 
   revealCell(roomId: string, playerId: string, row: number, col: number):
-    { success: true; cells: Array<{ cellId: string; value: number | 'mine'; revealedBy: string }>; delta: number; exploded?: boolean; gameEnded?: true }
+    { success: true; cells: Array<{ cellId: string; value: number | 'mine'; revealedBy: string }>; delta: number; exploded?: boolean; gameEnded?: true; eliminated?: boolean; boardComplete?: boolean }
     | { success: false; error: string } {
     const state = this.games.get(roomId)
     if (!state) return { success: false, error: 'Partida não encontrada' }
+    if (state.endedAt) return { success: false, error: 'Partida já encerrada' }
+
+    const status = state.playerStatus.get(playerId)
+    if (!status) return { success: false, error: 'Jogador não encontrado' }
+    if (status !== 'playing') return { success: false, error: 'Você não pode mais interagir' }
 
     const entry = state.scores.get(playerId)
     if (!entry) return { success: false, error: 'Jogador não encontrado' }
@@ -202,18 +246,54 @@ export class GameManager {
     if (!cell) return { success: false, error: 'Célula inválida' }
     if (cell.isRevealed) return { success: false, error: 'Célula já revelada' }
 
+    // ---- MINE EXPLOSION ----
     if (cell.hasMine) {
       cell.isRevealed = true
       entry.score += calculateScore('explode')
 
-      return {
-        success: true,
-        cells: [{ cellId: `${row}-${col}`, value: 'mine', revealedBy: playerId }],
+      const result = {
+        success: true as const,
+        cells: [{ cellId: `${row}-${col}`, value: 'mine' as const, revealedBy: playerId }],
         delta: calculateScore('explode'),
         exploded: true,
       }
+
+      // Battle-royale: death is definitive
+      if (state.mode === 'battle-royale') {
+        state.playerStatus.set(playerId, 'eliminated')
+        this.onPlayerEliminated?.(roomId, playerId)
+
+        const aliveCount = this.countAlivePlayers(state)
+        if (aliveCount <= 1) {
+          this.endGame(roomId, 'last_standing')
+          return { ...result, eliminated: true, gameEnded: true }
+        }
+
+        return { ...result, eliminated: true }
+      }
+
+      // Other modes: check if board is now complete (all mines exploded/flagged)
+      if (isBoardComplete(board)) {
+        state.playerStatus.set(playerId, 'boardComplete')
+        this.onPlayerBoardComplete?.(roomId, playerId)
+
+        if (state.mode === 'cooperative') {
+          this.endGame(roomId, 'win')
+          return { ...result, boardComplete: true, gameEnded: true }
+        }
+
+        if (this.checkAllPlayersDone(state)) {
+          this.endGame(roomId, 'complete')
+          return { ...result, boardComplete: true, gameEnded: true }
+        }
+
+        return { ...result, boardComplete: true }
+      }
+
+      return result
     }
 
+    // ---- SAFE REVEAL ----
     let cells: Array<{ cellId: string; value: number | 'mine'; revealedBy: string }>
     let delta: number
 
@@ -233,24 +313,15 @@ export class GameManager {
 
     entry.score += delta
 
-    if (state.mode === 'cooperative' && checkWin(board)) {
+    // ---- COOPERATIVE WIN ----
+    if (state.mode === 'cooperative' && isBoardComplete(board)) {
       entry.score += calculateScore('win')
 
       const elapsed = (Date.now() - state.startedAt) / 1000
       const timeBonus = Math.max(0, Math.round(COOP_TIME_BONUS_MAX * ((180 - elapsed) / 60)))
       entry.score += timeBonus
 
-      const bonus = calculateEndGameBonus(board)
-      entry.score += bonus.total
-
-      state.endedAt = Date.now()
-
-      if (state.timerHandle) {
-        clearTimeout(state.timerHandle)
-        delete state.timerHandle
-      }
-
-      this.onGameEnded?.(roomId, this.getScoreboard(roomId), 'win')
+      this.endGame(roomId, 'win')
 
       return {
         success: true,
@@ -260,14 +331,32 @@ export class GameManager {
       }
     }
 
+    // ---- BOARD COMPLETE CHECK (non-cooperative) ----
+    if (isBoardComplete(board)) {
+      state.playerStatus.set(playerId, 'boardComplete')
+      this.onPlayerBoardComplete?.(roomId, playerId)
+
+      if (this.checkAllPlayersDone(state)) {
+        this.endGame(roomId, 'complete')
+        return { success: true, cells, delta, boardComplete: true, gameEnded: true }
+      }
+
+      return { success: true, cells, delta, boardComplete: true }
+    }
+
     return { success: true, cells, delta }
   }
 
   flagCell(roomId: string, playerId: string, row: number, col: number):
-    { success: true; cellId: string; flagged: boolean; delta: number }
+    { success: true; cellId: string; flagged: boolean; delta: number; boardComplete?: boolean; gameEnded?: true }
     | { success: false; error: string } {
     const state = this.games.get(roomId)
     if (!state) return { success: false, error: 'Partida não encontrada' }
+    if (state.endedAt) return { success: false, error: 'Partida já encerrada' }
+
+    const status = state.playerStatus.get(playerId)
+    if (!status) return { success: false, error: 'Jogador não encontrado' }
+    if (status !== 'playing') return { success: false, error: 'Você não pode mais interagir' }
 
     const entry = state.scores.get(playerId)
     if (!entry) return { success: false, error: 'Jogador não encontrado' }
@@ -282,12 +371,40 @@ export class GameManager {
 
     cell.isFlagged = !cell.isFlagged
 
-    return {
-      success: true,
+    const result = {
+      success: true as const,
       cellId: `${row}-${col}`,
       flagged: cell.isFlagged,
       delta: 0,
     }
+
+    // Check if this completed the board
+    if (isBoardComplete(board)) {
+      state.playerStatus.set(playerId, 'boardComplete')
+      this.onPlayerBoardComplete?.(roomId, playerId)
+
+      if (state.mode === 'cooperative') {
+        this.endGame(roomId, 'win')
+        return { ...result, boardComplete: true, gameEnded: true }
+      }
+
+      if (this.checkAllPlayersDone(state)) {
+        this.endGame(roomId, 'complete')
+        return { ...result, boardComplete: true, gameEnded: true }
+      }
+
+      return { ...result, boardComplete: true }
+    }
+
+    return result
+  }
+
+  countAlivePlayers(state: GameState): number {
+    let alive = 0
+    for (const status of state.playerStatus.values()) {
+      if (status === 'playing') alive++
+    }
+    return alive
   }
 
   getScoreboard(roomId: string): GameScoreEntry[] {

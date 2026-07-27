@@ -167,6 +167,20 @@ export const DIFFICULTY_CONFIG: Record<Difficulty, { rows: number; cols: number;
   expert: { rows: 24, cols: 30, mines: 150 },
 }
 
+// Check if board is 100% complete (all mines flagged/exploded, all safe cells revealed)
+export function isBoardComplete(board: Board): boolean {
+  for (const row of board) {
+    for (const cell of row) {
+      if (cell.hasMine) {
+        if (!cell.isFlagged && !cell.isRevealed) return false
+      } else {
+        if (!cell.isRevealed) return false
+      }
+    }
+  }
+  return true
+}
+
 // Check win condition
 export function checkWin(board: Board): boolean {
   for (const row of board) {

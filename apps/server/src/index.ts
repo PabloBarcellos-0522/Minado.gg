@@ -29,6 +29,7 @@ const gameManager = new GameManager()
 const roomManager = new RoomManager()
 
 gameManager.onGameEnded = (roomId, scoreboard, reason) => {
+  if (reason === 'eliminated') return
   io.to(roomId).emit('game:ended', {
     result: reason,
     scoreboard: scoreboard.map((entry, i) => ({
@@ -37,6 +38,11 @@ gameManager.onGameEnded = (roomId, scoreboard, reason) => {
       rank: i + 1,
     })),
   })
+  const room = roomManager.getRoom(roomId)
+  if (room) {
+    room.status = 'finished'
+    io.to(roomId).emit('room:state', room)
+  }
 }
 
 roomManager.onPlayerRemoved = (roomId, playerId, playerUsername) => {

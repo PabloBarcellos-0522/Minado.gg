@@ -13,6 +13,10 @@ function emitToTarget(io: Server, socket: Socket, room: RoomWithId, event: strin
   }
 }
 
+function getPlayerId(socket: Socket): string {
+  return (socket as any).userId || socket.id
+}
+
 export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomManager, gameManager: GameManager): void {
   socket.on('game:reveal', (data: { cellId: string }) => {
     const room = roomManager.getRoomBySocket(socket.id)
@@ -28,7 +32,7 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
       gameState = gameManager.getGame(room.id)!
     }
 
-    const playerId = (socket as any).userId || socket.id
+    const playerId = getPlayerId(socket)
     const result = gameManager.revealCell(room.id, playerId, row, col)
 
     if (!result.success) {
@@ -50,9 +54,34 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
         delta: result.delta,
         total: (gameState.scores.get(playerId)?.score || 0),
       })
+
+      if (result.eliminated) {
+        if (result.gameEnded) {
+          // Game ended (last_standing) — onGameEnded broadcasts to room
+          io.to(room.id).emit('game:playerEliminated', { playerId })
+        } else {
+          // Only this player is out; game continues for others
+          io.to(room.id).emit('game:playerEliminated', { playerId })
+          socket.emit('game:ended', {
+            result: 'eliminated',
+            scoreboard: gameManager.getScoreboard(room.id).map((entry, i) => ({
+              playerId: entry.playerId,
+              score: entry.score,
+              rank: i + 1,
+            })),
+          })
+        }
+      } else if (result.boardComplete) {
+        io.to(room.id).emit('game:playerBoardComplete', { playerId })
+      }
+
+      if (result.gameEnded) {
+        gameManager.removeGame(room.id)
+      }
       return
     }
 
+    // Safe reveal
     if (result.cells.length === 1) {
       emit('game:cellRevealed', {
         cellId: result.cells[0].cellId,
@@ -69,6 +98,10 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
       total: (gameState.scores.get(playerId)?.score || 0),
     })
 
+    if (result.boardComplete) {
+      io.to(room.id).emit('game:playerBoardComplete', { playerId })
+    }
+
     if (result.gameEnded) {
       gameManager.removeGame(room.id)
     }
@@ -83,7 +116,7 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
     const [rowStr, colStr] = data.cellId.split('-')
     const row = parseInt(rowStr, 10)
     const col = parseInt(colStr, 10)
-    const playerId = (socket as any).userId || socket.id
+    const playerId = getPlayerId(socket)
 
     const result = gameManager.flagCell(room.id, playerId, row, col)
     if (!result.success) return
@@ -95,6 +128,14 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
       playerId,
       flagged: result.flagged,
     })
+
+    if (result.boardComplete) {
+      io.to(room.id).emit('game:playerBoardComplete', { playerId })
+    }
+
+    if (result.gameEnded) {
+      gameManager.removeGame(room.id)
+    }
   })
 
   socket.on('game:ping', (data: { type: string }) => {

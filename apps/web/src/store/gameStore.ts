@@ -64,6 +64,8 @@ export const useGameStore = create<{
   isOnline: boolean;
   removedForInactivity: boolean;
   timeRemaining: number;
+  boardComplete: boolean;
+  eliminated: boolean;
 
   initBoard: (config: BoardConfig, mode?: GameMode, board?: Board) => void;
   revealCell: (row: number, col: number) => void;
@@ -95,6 +97,8 @@ export const useGameStore = create<{
   isOnline: false,
   removedForInactivity: false,
   timeRemaining: 0,
+  boardComplete: false,
+  eliminated: false,
 
   initSocketListeners: () => {
     const socket = getSocket();
@@ -130,10 +134,12 @@ export const useGameStore = create<{
           showBoom: false,
           showConfetti: false,
           messages: [],
-          gameStartedAt: new Date().toISOString(),
-          lastMatchResult: null,
-          removedForInactivity: false,
-          players: ev.players.map((p: any) => ({
+      gameStartedAt: new Date().toISOString(),
+      lastMatchResult: null,
+      removedForInactivity: false,
+      boardComplete: false,
+      eliminated: false,
+      players: ev.players.map((p: any) => ({
             id: p.id,
             username: p.username,
             score: p.score || 0,
@@ -208,18 +214,33 @@ export const useGameStore = create<{
           players: state.players.map((p) => (p.id === ev.playerId ? { ...p, score: ev.total } : p)),
         });
       }),
+      onSocketEvent("game:playerBoardComplete", (data: unknown) => {
+        const ev = data as { playerId: string };
+        const state = get();
+        if (ev.playerId === state.currentUserId) {
+          set({ boardComplete: true });
+        }
+      }),
+      onSocketEvent("game:playerEliminated", (data: unknown) => {
+        const ev = data as { playerId: string };
+        const state = get();
+        if (ev.playerId === state.currentUserId) {
+          set({ eliminated: true });
+        }
+      }),
       onSocketEvent("game:ended", (data: unknown) => {
         const ev = data as {
           result: string;
           scoreboard: Array<{ playerId: string; score: number; rank: number }>;
         };
         const state = get();
-        const isWin = ev.result === "win";
+        const isWin = ev.result === "win" || ev.result === "last_standing";
         const isTimeout = ev.result === "timeout";
+        const isComplete = ev.result === "complete";
         set({
-          gameState: isWin ? "won" : "lost",
+          gameState: isWin ? "won" : (isComplete ? "won" : "lost"),
           showConfetti: isWin,
-          showBoom: !isWin && !isTimeout,
+          showBoom: !isWin && !isTimeout && !isComplete,
           timeRemaining: 0,
         });
 
@@ -304,6 +325,8 @@ export const useGameStore = create<{
       gameStartedAt: new Date().toISOString(),
       lastMatchResult: null,
       timeRemaining: 0,
+      boardComplete: false,
+      eliminated: false,
     });
   },
 
@@ -312,6 +335,7 @@ export const useGameStore = create<{
     if (state.gameState !== "playing") return;
 
     if (state.isOnline) {
+      if (state.boardComplete || state.eliminated) return
       if (state.timeRemaining === 0 && state.gameMode !== "cooperative") return
       getSocket().emit("game:reveal", { cellId: `${row}-${col}` });
       return;
@@ -377,7 +401,7 @@ export const useGameStore = create<{
       const players = get().players.map((p) =>
         p.id === state.currentUserId ? { ...p, score: p.score + calculateScore("win") } : p,
       );
-      set({ gameState: "won", showConfetti: true, players });
+      set({ gameState: "won", showConfetti: true, players, boardComplete: true });
 
       const endedAt = new Date().toISOString();
       const scoreboard = players
@@ -421,6 +445,7 @@ export const useGameStore = create<{
     if (state.gameState !== "playing") return;
 
     if (state.isOnline) {
+      if (state.boardComplete || state.eliminated) return
       if (state.timeRemaining === 0 && state.gameMode !== "cooperative") return
       getSocket().emit("game:flag", { cellId: `${row}-${col}` });
       return;
@@ -466,6 +491,8 @@ export const useGameStore = create<{
       lastMatchResult: null,
       removedForInactivity: false,
       timeRemaining: 0,
+      boardComplete: false,
+      eliminated: false,
     }),
 
   setShowBoom: (show) => set({ showBoom: show }),

@@ -44,9 +44,12 @@ export function MatchPage() {
   const showBoom = useGameStore((s) => s.showBoom)
   const showConfetti = useGameStore((s) => s.showConfetti)
   const boardConfig = useGameStore((s) => s.boardConfig)
+  const gameMode = useGameStore((s) => s.gameMode)
   const currentUserId = useGameStore((s) => s.currentUserId)
   const removedForInactivity = useGameStore((s) => s.removedForInactivity)
   const timeRemaining = useGameStore((s) => s.timeRemaining)
+  const boardComplete = useGameStore((s) => s.boardComplete)
+  const eliminated = useGameStore((s) => s.eliminated)
 
   const revealCell = useGameStore((s) => s.revealCell)
   const flagCell = useGameStore((s) => s.flagCell)
@@ -104,6 +107,12 @@ export function MatchPage() {
       return () => clearTimeout(timer)
     }
   }, [gameState, id, navigate])
+
+  useEffect(() => {
+    if (eliminated) {
+      navigate(`/partida/${id}/resultado`, { replace: true })
+    }
+  }, [eliminated, id, navigate])
 
   useEffect(() => {
     if (removedForInactivity) {
@@ -226,8 +235,17 @@ export function MatchPage() {
           {/* Board */}
           <div className="relative">
             <FxBoom active={showBoom} onComplete={() => setShowBoom(false)} />
-            <GameBoard board={board} onReveal={handleReveal} onFlag={handleFlag} />
+            <div className={boardComplete ? 'opacity-50 pointer-events-none' : ''}>
+              <GameBoard board={board} onReveal={handleReveal} onFlag={handleFlag} />
+            </div>
             {showConfetti && <FxConfetti active={true} onComplete={() => setShowConfetti(false)} />}
+            {(boardComplete || (timeRemaining === 0 && gameMode !== 'cooperative')) && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="px-6 py-3 rounded-[14px] bg-surface/90 border border-border backdrop-blur-sm">
+                  <span className="font-heading font-bold text-h5 text-ink">Tabuleiro completo</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Mascot */}
