@@ -62,6 +62,7 @@ export const useGameStore = create<{
   gameMode: GameMode;
   gameStartedAt: string;
   isOnline: boolean;
+  inOnlineMatch: boolean;
   removedForInactivity: boolean;
   timeRemaining: number;
   boardComplete: boolean;
@@ -95,6 +96,7 @@ export const useGameStore = create<{
   gameMode: "competitive",
   gameStartedAt: "",
   isOnline: false,
+  inOnlineMatch: false,
   removedForInactivity: false,
   timeRemaining: 0,
   boardComplete: false,
@@ -139,6 +141,7 @@ export const useGameStore = create<{
       removedForInactivity: false,
       boardComplete: false,
       eliminated: false,
+      inOnlineMatch: true,
       players: ev.players.map((p: any) => ({
             id: p.id,
             username: p.username,
@@ -242,6 +245,7 @@ export const useGameStore = create<{
           showConfetti: isWin,
           showBoom: !isWin && !isTimeout && !isComplete,
           timeRemaining: 0,
+          inOnlineMatch: false,
         });
 
         const endedAt = new Date().toISOString();
@@ -334,7 +338,7 @@ export const useGameStore = create<{
     const state = get();
     if (state.gameState !== "playing") return;
 
-    if (state.isOnline) {
+    if (state.isOnline || state.inOnlineMatch) {
       if (state.boardComplete || state.eliminated) return
       if (state.timeRemaining === 0 && state.gameMode !== "cooperative") return
       getSocket().emit("game:reveal", { cellId: `${row}-${col}` });
@@ -444,7 +448,7 @@ export const useGameStore = create<{
     const state = get();
     if (state.gameState !== "playing") return;
 
-    if (state.isOnline) {
+    if (state.isOnline || state.inOnlineMatch) {
       if (state.boardComplete || state.eliminated) return
       if (state.timeRemaining === 0 && state.gameMode !== "cooperative") return
       getSocket().emit("game:flag", { cellId: `${row}-${col}` });
@@ -493,6 +497,7 @@ export const useGameStore = create<{
       timeRemaining: 0,
       boardComplete: false,
       eliminated: false,
+      inOnlineMatch: false,
     }),
 
   setShowBoom: (show) => set({ showBoom: show }),

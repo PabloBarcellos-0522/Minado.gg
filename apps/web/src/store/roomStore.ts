@@ -43,6 +43,8 @@ export const useRoomStore = create<RoomState>()((set, get) => ({
       onSocketEvent('connect', () => {
         set({ isConnected: true })
         get().fetchRooms()
+        const roomId = get().currentRoom?.id
+        if (roomId) getSocket().emit('room:join', { roomId })
       }),
       onSocketEvent('disconnect', () => set({ isConnected: false })),
       onSocketEvent('room:list', (rooms: unknown) => {
