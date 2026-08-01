@@ -1,11 +1,20 @@
 import { generateBoard, cloneBoard, floodFill, isBoardComplete, calculateScore } from '@minado/shared'
-import type { Board, BoardConfig, Player, GameMode } from '@minado/shared'
+import type { Board, BoardConfig, Player, GameMode, Cell } from '@minado/shared'
 
 const CORRECT_FLAG_POINTS = 50
 const REVEALED_CELL_POINTS = 5
 const WRONG_FLAG_PENALTY = 25
 
 const COOP_TIME_BONUS_MAX = 600
+
+function sanitizeBoardForClient(board: Board): Board {
+  return board.map((row) =>
+    row.map((cell: Cell) => ({
+      ...cell,
+      hasMine: cell.isRevealed && cell.hasMine,
+    }))
+  )
+}
 
 export type PlayerStatus = 'playing' | 'boardComplete' | 'eliminated'
 
@@ -166,6 +175,16 @@ export class GameManager {
       return state.playerBoards.get(state.sharedBoardId!)?.board || null
     }
     return null
+  }
+
+  getSanitizedBoardForPlayer(roomId: string, playerId: string): Board | null {
+    const board = this.getPlayerBoard(roomId, playerId)
+    return board ? sanitizeBoardForClient(board) : null
+  }
+
+  getSanitizedSharedBoard(roomId: string): Board | null {
+    const board = this.getBoard(roomId)
+    return board ? sanitizeBoardForClient(board) : null
   }
 
   removePlayerBoard(roomId: string, playerId: string): void {

@@ -75,6 +75,10 @@ export function cloneBoard(board: Board): Board {
 
 // Board generation
 export function generateBoard(rows: number, cols: number, mineCount: number, safeRow?: number, safeCol?: number): Board {
+  if (mineCount <= 0 || mineCount >= rows * cols) {
+    throw new RangeError(`mineCount (${mineCount}) deve ser > 0 e < total de células (${rows * cols})`)
+  }
+
   const board: Board = []
 
   // Initialize cells
