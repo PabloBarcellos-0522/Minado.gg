@@ -8,6 +8,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Modal, ModalActions } from '@/components/ui/Modal'
 import { Tabs, TabList, TabTrigger, TabContent } from '@/components/ui/Tabs'
+import { Switch } from '@/components/ui/Switch'
 import { Navbar } from '@/components/blocks/Navbar'
 import { PlayerRoster } from '@/components/blocks/PlayerRoster'
 import { ChatPanel } from '@/components/blocks/ChatPanel'
@@ -106,6 +107,7 @@ const demoBoardCells = [
 export function Styleguide() {
   const { theme, toggleTheme } = useTheme()
   const [modalOpen, setModalOpen] = useState(false)
+  const [demoSwitchOn, setDemoSwitchOn] = useState(false)
   const [boomActive, setBoomActive] = useState(false)
   const [confettiActive, setConfettiActive] = useState(false)
   const [shakeActive, setShakeActive] = useState(false)
@@ -441,6 +443,25 @@ export function Styleguide() {
                   <Button variant="primary" onClick={handleModalClose}>Criar</Button>
                 </ModalActions>
               </Modal>
+            </div>
+
+            {/* Switch */}
+            <div className="mb-8 p-5 rounded-[14px] bg-surface border border-border">
+              <h3 className="font-heading font-bold text-h5 mb-4">Switch</h3>
+              <div className="flex flex-col gap-4">
+                <label className="flex items-center gap-3">
+                  <Switch checked={demoSwitchOn} onChange={(e) => setDemoSwitchOn(e.target.checked)} />
+                  <span className="font-heading font-bold text-small text-ink">Sala privada ({demoSwitchOn ? 'ligado' : 'desligado'})</span>
+                </label>
+                <div className="flex items-center gap-3">
+                  <Switch checked defaultChecked onChange={() => {}} />
+                  <span className="font-heading font-bold text-small text-ink">Sempre ativo (ligado)</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Switch checked={false} disabled />
+                  <span className="font-heading font-bold text-small text-ink-muted">Desabilitado</span>
+                </div>
+              </div>
             </div>
 
             {/* Tabs */}

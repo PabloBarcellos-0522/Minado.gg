@@ -608,7 +608,7 @@ interface GameState {
 2. **Batch (flood-fill)**: `{ batch: Array<{ cellId: string, value: number, revealedBy: string }> }`
 3. **Explosion**: `{ cellId: string, value: 'mine', revealedBy: string, exploded: true, teamLives?: number }`
 
-**Note on `game:ended` with `result: 'eliminated'`**: This is emitted **only to the eliminated player's socket** (see `gameHandler.ts:78-85`). Other players continue playing and do NOT receive `game:ended` for this reason. The broadcast `game:ended` (see `index.ts:31-46`) fires only for `'victory'`, `'last_standing'`, `'all_exploded'`, `'time_up'`, `'board_cleared'`.
+**Note on `game:ended` with `result: 'eliminated'`**: This is emitted **only to the eliminated player's socket** (see `gameHandler.ts:78-85`). Other players continue playing and do NOT receive `game:ended` for this reason. The broadcast `game:ended` (see `index.ts:31-46`) fires only for `'win'`, `'timeout'`, `'complete'`, `'last_standing'`, `'lose'`.
 
 **Emission scope logic** (`emitToTarget`):
 - **Cooperative mode** → emits to entire room (everyone sees everything)

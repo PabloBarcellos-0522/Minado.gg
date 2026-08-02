@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -7,6 +6,7 @@ import { Tabs, TabList, TabTrigger, TabContent } from '@/components/ui/Tabs'
 import { RoomCard } from '@/components/blocks/RoomCard'
 import { ModeGrid, GameModeCard } from '@/components/blocks/GameModeCard'
 import { Navbar } from '@/components/blocks/Navbar'
+import { CreateRoomModal } from '@/components/blocks/CreateRoomModal'
 import { useAuthStore } from '@/store/authStore'
 import { useRoomStore, type RoomWithName } from '@/store/roomStore'
 import type { GameMode, Difficulty } from '@minado/shared'
@@ -31,6 +31,8 @@ const difficultyFilters: { value: Difficulty | 'all'; label: string }[] = [
 export function LobbyPage() {
   const [modeFilter, setModeFilter] = useState<GameMode | 'all'>('all')
   const [difficultyFilter, setDifficultyFilter] = useState<Difficulty | 'all'>('all')
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [modalInitialMode, setModalInitialMode] = useState<GameMode | null>(null)
 
   const rooms = useRoomStore((s) => s.rooms)
   const fetchRooms = useRoomStore((s) => s.fetchRooms)
@@ -44,6 +46,11 @@ export function LobbyPage() {
     return true
   })
 
+  const openCreateModal = (mode?: GameMode) => {
+    setModalInitialMode(mode ?? null)
+    setCreateModalOpen(true)
+  }
+
   return (
     <div className="min-h-dvh flex flex-col">
       <Navbar username={useAuthStore((s) => s.user?.username || 'Jogador')} avatarUrl="" />
@@ -56,14 +63,12 @@ export function LobbyPage() {
             <p className="text-ink-muted">Encontre uma sala ou crie a sua</p>
           </div>
 
-          <Link to="/lobby/criar-sala">
-            <Button variant="primary" size="lg">
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Criar Sala
-            </Button>
-          </Link>
+          <Button variant="primary" size="lg" onClick={() => openCreateModal()}>
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Criar Sala
+          </Button>
         </div>
 
         {/* Filters */}
@@ -125,9 +130,7 @@ export function LobbyPage() {
                   </svg>
                   <h3 className="font-heading font-bold text-h5 text-ink mb-2">Nenhuma sala encontrada</h3>
                   <p className="text-ink-muted mb-4">Tente ajustar os filtros ou crie sua própria sala.</p>
-                  <Link to="/lobby/criar-sala">
-                    <Button variant="primary">Criar Sala</Button>
-                  </Link>
+                  <Button variant="primary" onClick={() => openCreateModal()}>Criar Sala</Button>
                 </CardContent>
               </Card>
             ) : (
@@ -226,12 +229,14 @@ export function LobbyPage() {
                 icon={<span className="text-2xl">{mode.icon}</span>}
                 title={mode.title}
                 description={mode.desc}
-                onClick={() => (window.location.href = `/lobby/criar-sala?mode=${mode.key}`)}
+                onClick={() => openCreateModal(mode.key as GameMode)}
               />
             ))}
           </ModeGrid>
         </section>
       </main>
+
+      <CreateRoomModal open={createModalOpen} initialMode={modalInitialMode} onClose={() => setCreateModalOpen(false)} />
     </div>
   )
 }

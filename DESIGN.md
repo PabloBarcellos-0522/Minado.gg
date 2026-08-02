@@ -756,7 +756,7 @@ Tab triggers: weight 700, 12/20 padding, 3px bottom border (transparent by defau
 
 #### Switch
 
-Referenced in codebase (not shown in styleguide) — toggle component for settings.
+Toggle 44×24px (w-11 h-6) com knob branco de 20×20px (h-5 w-5) e sombra. Track: `bg-primary-500` quando ligado, `--color-border` quando desligado. Knob com curso de 24px (`translate-x-6`) e `ease-bounce`. Centralização vertical via `flex items-center` no track. Foco visível via `peer-focus-visible:ring-2` (ring token). Estados: ligado, desligado, disabled (opacity 50).
 
 #### Alert
 
@@ -924,7 +924,6 @@ Applied to parent container. 500ms shake animation: alternating translate offset
 ## Known Gaps
 
 - Form validation and error states need expansion — only basic error styling exists on Input.
-- Switch component exists but is not documented in the styleguide.
 - Alert component exists but is not documented in the styleguide.
 - Board cell right-click (flag) interaction needs visual documentation.
 - Chat input and message composition UI needs full specification.

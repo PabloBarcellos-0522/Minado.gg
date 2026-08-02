@@ -592,11 +592,13 @@ interface GameState {
 | `room:playerLeft` | `{ playerId }` | Sala | Jogador saiu |
 | `game:playerRemoved` | `{ playerId, username }` | Sala | Removido durante jogo ativo |
 | `game:removedForInactivity` | `{ reason }` | Remetente | Reentrada negada |
-| `game:started` | `{ board, boardMeta, players, gameMode }` | Por jogador ou sala | Partida começou |
+| `game:started` | `{ board, boardMeta, players, gameMode, teamLives? }` | Por jogador ou sala | Partida começou |
 | `game:cellRevealed` | `{ cellId, value, revealedBy, exploded? }` ou `{ batch: [...] }` | Por jogador ou sala | Célula(s) revelada(s) |
 | `game:cellFlagged` | `{ cellId, playerId, flagged }` | Por jogador ou sala | Célula marcada |
 | `game:scoreUpdate` | `{ playerId, delta, total }` | Sala | Pontuação mudou |
-| `game:ended` | `{ result, scoreboard }` | Sala | Partida encerrada |
+| `game:playerBoardComplete` | `{ playerId }` | Sala | Jogador completou o tabuleiro |
+| `game:playerEliminated` | `{ playerId }` | Sala | Jogador eliminado (mina) |
+| `game:ended` | `{ result, scoreboard, actions }` | Sala | Partida encerrada |
 | `chat:message` | `{ id, fromId, from, text, ts }` | Sala | Mensagem de chat |
 | `error` | `{ code, message }` | Remetente | Erro |
 

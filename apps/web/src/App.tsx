@@ -1,11 +1,10 @@
-import { Routes, Route, useLocation } from "react-router-dom";
+import { Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { Styleguide } from "./pages/Styleguide";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
 import { LobbyPage } from "./pages/LobbyPage";
-import { CreateRoomPage } from "./pages/CreateRoomPage";
 import { RoomPage } from "./pages/RoomPage";
 import { MatchPage } from "./pages/MatchPage";
 import { ResultPage } from "./pages/ResultPage";
@@ -72,7 +71,7 @@ function App() {
                 <Route path="/" element={<HomePage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/lobby" element={<LobbyPage />} />
-                <Route path="/lobby/criar-sala" element={<CreateRoomPage />} />
+                <Route path="/lobby/criar-sala" element={<Navigate to="/lobby" replace />} />
                 <Route path="/sala/:id" element={<RoomPage />} />
                 <Route path="/partida/:id" element={<MatchPage />} />
                 <Route path="/partida/:id/resultado" element={<ResultPage />} />

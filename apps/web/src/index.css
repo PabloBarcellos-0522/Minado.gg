@@ -268,6 +268,33 @@ h6 {
 }
 
 /* =============================================================
+   Scrollbar (global — página e modais)
+   ============================================================= */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-ink-muted);
+}
+
+:root {
+  scrollbar-color: var(--color-border) transparent;
+  scrollbar-width: thin;
+}
+
+.dark {
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* =============================================================
    Reduced motion
    ============================================================= */
 @media (prefers-reduced-motion: reduce) {

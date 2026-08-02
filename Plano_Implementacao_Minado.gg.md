@@ -155,9 +155,9 @@ Função `calculateScore()` em `packages/shared`, usada pelo GameManager (servid
 
 ## 9. Eventos Socket.IO — contrato
 
-**Cliente → Servidor:** `room:join`, `room:leave`, `room:ready`, `room:start`, `game:reveal`, `game:flag`, `chat:message`
+**Cliente → Servidor:** `room:create`, `room:join`, `room:leave`, `room:ready`, `room:start`, `room:list`, `game:reveal`, `game:flag`, `chat:message`
 
-**Servidor → Cliente:** `room:list`, `room:state`, `room:playerJoined`, `room:playerLeft`, `game:started`, `game:cellRevealed`, `game:cellFlagged`, `game:scoreUpdate`, `game:playerEliminated`, `game:ended`, `chat:message`, `error`
+**Servidor → Cliente:** `room:list`, `room:state`, `room:playerJoined`, `room:playerLeft`, `game:started`, `game:cellRevealed`, `game:cellFlagged`, `game:scoreUpdate`, `game:playerBoardComplete`, `game:playerEliminated`, `game:ended`, `chat:message`, `error`
 
 ---
 
