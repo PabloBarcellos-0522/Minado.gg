@@ -67,6 +67,7 @@ export const useGameStore = create<{
   timeRemaining: number;
   boardComplete: boolean;
   eliminated: boolean;
+  teamLives: number;
 
   initBoard: (config: BoardConfig, mode?: GameMode, board?: Board) => void;
   revealCell: (row: number, col: number) => void;
@@ -101,6 +102,7 @@ export const useGameStore = create<{
   timeRemaining: 0,
   boardComplete: false,
   eliminated: false,
+  teamLives: 3,
 
   initSocketListeners: () => {
     const socket = getSocket();
@@ -114,6 +116,7 @@ export const useGameStore = create<{
           board: Board;
           boardMeta: { rows: number; cols: number; mines: number; mode: string; timeLimit?: number };
           players: Array<{ id: string; username: string; score?: number }>;
+          teamLives?: number;
         };
         if (!ev.board) {
           console.error("[game:started] server did not send board — aborting");
@@ -142,10 +145,11 @@ export const useGameStore = create<{
       boardComplete: false,
       eliminated: false,
       inOnlineMatch: true,
-      players: ev.players.map((p: any) => ({
+      teamLives: ev.teamLives ?? 3,
+      players: ev.players.map((p: { id: string; username: string; score?: number; avatarUrl?: string; isReady?: boolean; isHost?: boolean; isConnected?: boolean }) => ({
             id: p.id,
             username: p.username,
-            score: p.score || 0,
+            score: p.score ?? 0,
             color: "",
           })),
         });
@@ -157,6 +161,7 @@ export const useGameStore = create<{
           value?: number | "mine";
           revealedBy?: string;
           exploded?: boolean;
+          teamLives?: number;
         };
         const state = get();
 
@@ -167,7 +172,7 @@ export const useGameStore = create<{
               cell.row === r && cell.col === c ? { ...cell, isRevealed: true } : cell,
             ),
           );
-          set({ board: newBoard, showBoom: true });
+          set({ board: newBoard, showBoom: true, teamLives: ev.teamLives ?? 3 });
           return;
         }
 
@@ -235,15 +240,36 @@ export const useGameStore = create<{
         const ev = data as {
           result: string;
           scoreboard: Array<{ playerId: string; score: number; rank: number }>;
+          actions?: Array<{
+            playerId: string;
+            type: "reveal" | "flood-fill" | "flag-correct" | "flag-wrong" | "explode" | "win";
+            cellId?: string;
+            points: number;
+            timestamp: string;
+          }>;
         };
         const state = get();
-        const isWin = ev.result === "win" || ev.result === "last_standing";
-        const isTimeout = ev.result === "timeout";
-        const isComplete = ev.result === "complete";
+        const rank = ev.scoreboard.find((e) => e.playerId === state.currentUserId)?.rank;
+
+        let isWin = false;
+        if (ev.result === "win") {
+          // Coop victory - ALL players win
+          isWin = true;
+        } else if (ev.result === "last_standing") {
+          // Battle royale - won if not eliminated
+          isWin = !state.eliminated;
+        } else if (ev.result === "lose") {
+          // Coop team loss (from Step 11) - ALL players lose
+          isWin = false;
+        } else if (ev.result === "timeout" || ev.result === "complete") {
+          // Race/competitive - only rank 1 wins
+          isWin = rank === 1;
+        }
+
         set({
-          gameState: isWin ? "won" : (isComplete ? "won" : "lost"),
+          gameState: isWin ? "won" : "lost",
           showConfetti: isWin,
-          showBoom: !isWin && !isTimeout && !isComplete,
+          showBoom: ev.result === "eliminated" || ev.result === "lose",
           timeRemaining: 0,
           inOnlineMatch: false,
         });
@@ -268,7 +294,7 @@ export const useGameStore = create<{
             scoreboard,
             startedAt: state.gameStartedAt,
             endedAt,
-            actions: [],
+            actions: ev.actions ?? [],
           },
         });
       }),
@@ -331,6 +357,7 @@ export const useGameStore = create<{
       timeRemaining: 0,
       boardComplete: false,
       eliminated: false,
+      teamLives: mode === "cooperative" ? 3 : 0,
     });
   },
 
@@ -498,6 +525,7 @@ export const useGameStore = create<{
       boardComplete: false,
       eliminated: false,
       inOnlineMatch: false,
+      teamLives: 3,
     }),
 
   setShowBoom: (show) => set({ showBoom: show }),

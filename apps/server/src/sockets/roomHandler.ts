@@ -1,5 +1,5 @@
 import type { Server, Socket } from 'socket.io'
-import type { RoomManager } from '../rooms/RoomManager.js'
+import type { RoomManager, RoomData } from '../rooms/RoomManager.js'
 import type { GameManager } from '../game/GameManager.js'
 import { DIFFICULTY_CONFIG } from '@minado/shared'
 import { validateRoomCreate } from '../game/roomValidation.js'
@@ -115,12 +115,10 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
             },
             gameMode: room.mode,
             players: room.players.map((p) => ({
-              id: p.id,
-              username: p.username,
-              avatarUrl: p.avatarUrl,
-              isEligible: true,
+              ...p,
               score: gameState.scores.get(p.id)?.score ?? 0,
             })),
+            teamLives: room.mode === 'cooperative' ? gameState.teamLives : undefined,
           })
         }
       }
@@ -191,7 +189,7 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
     io.emit('room:list', roomManager.getPublicRooms())
   })
 
-  socket.on('room:ready', (data: { ready: boolean }) => {
+  socket.on('room:ready', (data: { ready?: boolean }) => {
     const room = roomManager.getRoomBySocket(socket.id)
     if (!room) return
 
@@ -199,7 +197,12 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
     const player = room.players.find((p) => p.id === userId)
     if (!player) return
 
-    const updated = roomManager.toggleReady(room.id, player.id)
+    let updated: RoomData | null = null
+    if (typeof data?.ready === 'boolean') {
+      updated = roomManager.setReady(room.id, player.id, data.ready)
+    } else {
+      updated = roomManager.toggleReady(room.id, player.id)
+    }
     if (updated) {
       io.to(room.id).emit('room:state', updated)
     }
@@ -225,6 +228,7 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
     roomManager.startGame(room.id)
 
     const timeLimit = room.timeLimit
+    const gameState = gameManager.getGame(room.id)
     if (room.mode === 'cooperative') {
       const board = gameManager.getSanitizedSharedBoard(room.id)
       io.to(room.id).emit('game:started', {
@@ -237,6 +241,7 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
           timeLimit,
         },
         players: room.players,
+        teamLives: gameState?.teamLives,
       })
     } else {
       const sockets = await io.in(room.id).fetchSockets()
