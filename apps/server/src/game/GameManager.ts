@@ -35,6 +35,14 @@ export interface GameAction {
   timestamp: string
 }
 
+export type PlayerAction =
+  | { type: 'reveal'; row: number; col: number; ts: number }
+  | { type: 'flood-fill'; row: number; col: number; ts: number }
+  | { type: 'flag'; row: number; col: number; ts: number }
+  | { type: 'explode'; row: number; col: number; ts: number }
+
+export const MAX_ACTIONS_PER_PLAYER = 500
+
 export interface GameState {
   roomId: string
   config: BoardConfig
@@ -51,7 +59,8 @@ export interface GameState {
   firstRevealDone: Map<string, boolean>
   template?: Board
   teamLives?: number
-  actions: GameAction[]
+  actions: Map<string, PlayerAction[]>
+  explodedPlayers: Set<string>
 }
 
 export type GameEndReason = 'win' | 'timeout' | 'complete' | 'eliminated' | 'last_standing' | 'lose'
@@ -118,7 +127,8 @@ export class GameManager {
       firstRevealDone: new Map(),
       template: mode === 'competitive' ? playerBoards.get(players[0].id)?.board ?? undefined : undefined,
       teamLives: mode === 'cooperative' ? COOP_TEAM_LIVES : undefined,
-      actions: [],
+      actions: new Map(),
+      explodedPlayers: new Set(),
     }
 
     if (timeLimit > 0) {
@@ -127,6 +137,13 @@ export class GameManager {
 
     this.games.set(roomId, state)
     return state
+  }
+
+  private recordAction(state: GameState, playerId: string, action: PlayerAction) {
+    const arr = state.actions.get(playerId) ?? []
+    arr.push(action)
+    if (arr.length > MAX_ACTIONS_PER_PLAYER) arr.shift()
+    state.actions.set(playerId, arr)
   }
 
   getGame(roomId: string): GameState | undefined {
@@ -197,13 +214,8 @@ export class GameManager {
   private awardCoopWin(state: GameState, playerId: string, entry: GameScoreEntry, roomId: string): void {
     entry.score += calculateScore('win')
 
-    // Record win action for cooperative completion
-    state.actions.push({
-      playerId,
-      type: 'win',
-      points: calculateScore('win'),
-      timestamp: new Date().toISOString(),
-    })
+    // Record win action for cooperative completion (not part of PlayerAction for persistence)
+    // Note: 'win' type not in PlayerAction - it's for internal GameAction only
 
     const elapsed = (Date.now() - state.startedAt) / 1000
     const timeBonus = Math.round(COOP_TIME_BONUS_MAX * Math.max(0, Math.min(1, (COOP_IDEAL_TIME_SECONDS - elapsed) / COOP_IDEAL_TIME_SECONDS)))
@@ -313,14 +325,9 @@ export class GameManager {
         state.teamLives!--
         const currentTeamLives = state.teamLives!
 
-        // Record explosion action
-        state.actions.push({
-          playerId,
-          type: 'explode',
-          cellId: `${row}-${col}`,
-          points: calculateScore('explode'),
-          timestamp: new Date().toISOString(),
-        })
+        // Record explode action and track exploded player
+        this.recordAction(state, playerId, { type: 'explode', row, col, ts: Date.now() })
+        state.explodedPlayers.add(playerId)
 
         const coopResult = {
           success: true as const,
@@ -366,14 +373,9 @@ export class GameManager {
         exploded: true,
       }
 
-      // Record explosion action for non-cooperative modes
-      state.actions.push({
-        playerId,
-        type: 'explode',
-        cellId: `${row}-${col}`,
-        points: calculateScore('explode'),
-        timestamp: new Date().toISOString(),
-      })
+      // Record explode action and track exploded player
+      this.recordAction(state, playerId, { type: 'explode', row, col, ts: Date.now() })
+      state.explodedPlayers.add(playerId)
 
       // Battle-royale: death is definitive
       if (state.mode === 'battle-royale') {
@@ -432,14 +434,11 @@ export class GameManager {
     entry.score += delta
 
     // Record action for safe reveal
-    const revealType = updatedCell.adjacentMines === 0 ? 'flood-fill' : 'reveal'
-    state.actions.push({
-      playerId,
-      type: revealType,
-      cellId: `${row}-${col}`,
-      points: delta,
-      timestamp: new Date().toISOString(),
-    })
+    if (updatedCell.adjacentMines === 0) {
+      this.recordAction(state, playerId, { type: 'flood-fill', row, col, ts: Date.now() })
+    } else {
+      this.recordAction(state, playerId, { type: 'reveal', row, col, ts: Date.now() })
+    }
 
     // ---- COOPERATIVE WIN ----
     if (state.mode === 'cooperative' && isBoardComplete(board)) {
@@ -512,19 +511,7 @@ export class GameManager {
     entry.score += delta
 
     // Record flag action
-    let flagType: 'flag-correct' | 'flag-wrong'
-    if (cell.hasMine) {
-      flagType = cell.isFlagged ? 'flag-correct' : 'flag-wrong'
-    } else {
-      flagType = cell.isFlagged ? 'flag-wrong' : 'flag-correct'
-    }
-    state.actions.push({
-      playerId,
-      type: flagType,
-      cellId: `${row}-${col}`,
-      points: delta,
-      timestamp: new Date().toISOString(),
-    })
+    this.recordAction(state, playerId, { type: 'flag', row, col, ts: Date.now() })
 
     const result = {
       success: true as const,
