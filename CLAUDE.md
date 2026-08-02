@@ -100,9 +100,24 @@ Component reference in `DESIGN.md` — use token references (`{colors.primary-50
 
 ## Socket.IO Events
 
-**Client → Server**: `room:join`, `room:leave`, `room:ready`, `room:start`, `game:reveal`, `game:flag`, `game:ping`, `chat:message`
+**Client → Server**: `room:create`, `room:join`, `room:leave`, `room:ready`, `room:start`, `room:list`, `game:reveal`, `game:flag`, `chat:message`
 
-**Server → Client**: `room:list`, `room:state`, `room:playerJoined`, `room:playerLeft`, `game:started`, `game:cellRevealed`, `game:cellFlagged`, `game:scoreUpdate`, `game:playerEliminated`, `game:ended`, `chat:message`, `error`
+**Server → Client**: `room:created`, `room:list`, `room:state`, `room:playerJoined`, `room:playerLeft`, `game:started`, `game:cellRevealed`, `game:cellFlagged`, `game:scoreUpdate`, `game:playerBoardComplete`, `game:playerEliminated`, `game:playerRemoved`, `game:removedForInactivity`, `game:ended`, `chat:message`, `error`
+
+### game:cellRevealed shapes (3 variants)
+1. **Single cell**: `{ cellId: string, value: number, revealedBy: string }`
+2. **Batch (flood-fill)**: `{ batch: Array<{ cellId: string, value: number, revealedBy: string }> }`
+3. **Explosion**: `{ cellId: string, value: 'mine', revealedBy: string, exploded: true, teamLives?: number }`
+
+### game:started payload notes
+- Includes `teamLives` (number) for cooperative mode
+- `players` array shape (rejoin sends same shape as initial): `room.players.map(p => ({ id, username, avatarUrl, isReady, isHost, isConnected, score: gameState.scores.get(p.id)?.score ?? 0 }))` — `isEligible` removed (unused)
+
+### game:ended 'eliminated' behavior
+- Emitted ONLY to the eliminated player's socket (see `gameHandler.ts:78-85`)
+- Other players continue playing; they do NOT receive `game:ended` for this reason
+- Broadcast `game:ended` (see `index.ts:31-46`) only for other reasons: `'win'`, `'timeout'`, `'complete'`, `'last_standing'`, `'lose'`
+- `game:ended` payload includes `actions?: MatchPlayerAction[]` (for match persistence)
 
 ## Database Models (Prisma)
 

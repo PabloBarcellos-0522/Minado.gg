@@ -1,11 +1,9 @@
-import { generateBoard, cloneBoard, floodFill, isBoardComplete, calculateScore } from '@minado/shared'
+import { generateBoard, cloneBoard, floodFill, isBoardComplete, calculateScore, relocateMine } from '@minado/shared'
 import type { Board, BoardConfig, Player, GameMode, Cell } from '@minado/shared'
 
-const CORRECT_FLAG_POINTS = 50
-const REVEALED_CELL_POINTS = 5
-const WRONG_FLAG_PENALTY = 25
-
+const COOP_TEAM_LIVES = 3
 const COOP_TIME_BONUS_MAX = 600
+const COOP_IDEAL_TIME_SECONDS = 300
 
 function sanitizeBoardForClient(board: Board): Board {
   return board.map((row) =>
@@ -21,19 +19,20 @@ export type PlayerStatus = 'playing' | 'boardComplete' | 'eliminated'
 export interface GameScoreEntry {
   playerId: string
   score: number
-}
-
-export interface EndGameBonus {
-  total: number
-  correctFlags: number
-  wrongFlags: number
-  revealedSafe: number
-  totalSafe: number
+  rank: number
 }
 
 export interface PlayerBoardData {
   board: Board
   minePositions: Set<string>
+}
+
+export interface GameAction {
+  playerId: string
+  type: 'reveal' | 'flood-fill' | 'flag-correct' | 'flag-wrong' | 'explode' | 'win'
+  cellId?: string
+  points: number
+  timestamp: string
 }
 
 export interface GameState {
@@ -49,9 +48,13 @@ export interface GameState {
   timerHandle?: NodeJS.Timeout
   endedByTimer?: boolean
   playerStatus: Map<string, PlayerStatus>
+  firstRevealDone: Map<string, boolean>
+  template?: Board
+  teamLives?: number
+  actions: GameAction[]
 }
 
-export type GameEndReason = 'win' | 'timeout' | 'complete' | 'eliminated' | 'last_standing'
+export type GameEndReason = 'win' | 'timeout' | 'complete' | 'eliminated' | 'last_standing' | 'lose'
 
 function extractMinePositions(board: Board): Set<string> {
   const pos = new Set<string>()
@@ -61,28 +64,6 @@ function extractMinePositions(board: Board): Set<string> {
     }
   }
   return pos
-}
-
-function calculateEndGameBonus(board: Board): EndGameBonus {
-  let correctFlags = 0
-  let wrongFlags = 0
-  let revealedSafe = 0
-  let totalSafe = 0
-
-  for (const row of board) {
-    for (const cell of row) {
-      if (cell.hasMine) {
-        if (cell.isFlagged) correctFlags++
-      } else {
-        totalSafe++
-        if (cell.isRevealed) revealedSafe++
-        if (cell.isFlagged) wrongFlags++
-      }
-    }
-  }
-
-  const total = correctFlags * CORRECT_FLAG_POINTS + revealedSafe * REVEALED_CELL_POINTS - wrongFlags * WRONG_FLAG_PENALTY
-  return { total, correctFlags, wrongFlags, revealedSafe, totalSafe }
 }
 
 export class GameManager {
@@ -96,7 +77,7 @@ export class GameManager {
     const scores = new Map<string, GameScoreEntry>()
     const playerStatus = new Map<string, PlayerStatus>()
     for (const p of players) {
-      scores.set(p.id, { playerId: p.id, score: 0 })
+      scores.set(p.id, { playerId: p.id, score: 0, rank: 0 })
       playerStatus.set(p.id, 'playing')
     }
 
@@ -120,6 +101,8 @@ export class GameManager {
       for (const p of players) {
         playerBoards.set(p.id, { board: cloneBoard(template), minePositions: minePos })
       }
+      // Store template for first-click safety propagation
+      playerBoards.set('template', { board: template, minePositions: minePos })
     }
 
     const state: GameState = {
@@ -132,6 +115,10 @@ export class GameManager {
       sharedBoardId: mode === 'cooperative' ? 'shared' : undefined,
       timeLimit,
       playerStatus,
+      firstRevealDone: new Map(),
+      template: mode === 'competitive' ? playerBoards.get(players[0].id)?.board ?? undefined : undefined,
+      teamLives: mode === 'cooperative' ? COOP_TEAM_LIVES : undefined,
+      actions: [],
     }
 
     if (timeLimit > 0) {
@@ -207,10 +194,28 @@ export class GameManager {
     return true
   }
 
-  private endGame(roomId: string, reason: GameEndReason): void {
+  private awardCoopWin(state: GameState, playerId: string, entry: GameScoreEntry, roomId: string): void {
+    entry.score += calculateScore('win')
+
+    // Record win action for cooperative completion
+    state.actions.push({
+      playerId,
+      type: 'win',
+      points: calculateScore('win'),
+      timestamp: new Date().toISOString(),
+    })
+
+    const elapsed = (Date.now() - state.startedAt) / 1000
+    const timeBonus = Math.round(COOP_TIME_BONUS_MAX * Math.max(0, Math.min(1, (COOP_IDEAL_TIME_SECONDS - elapsed) / COOP_IDEAL_TIME_SECONDS)))
+    entry.score += timeBonus
+
+    this.endGame(roomId, 'win')
+  }
+
+  private endGame(roomId: string, reason: GameEndReason, priorityPlayerId?: string): GameScoreEntry[] {
     const state = this.games.get(roomId)
-    if (!state) return
-    if (state.endedAt) return
+    if (!state) return []
+    if (state.endedAt) return []
 
     state.endedAt = Date.now()
 
@@ -219,7 +224,10 @@ export class GameManager {
       delete state.timerHandle
     }
 
-    this.onGameEnded?.(roomId, this.getScoreboard(roomId), reason)
+    const scoreboard = this.getScoreboard(roomId, priorityPlayerId)
+    this.onGameEnded?.(roomId, scoreboard, reason)
+    this.games.delete(roomId)
+    return scoreboard
   }
 
   endByTimer(roomId: string): GameScoreEntry[] {
@@ -228,23 +236,11 @@ export class GameManager {
     if (state.endedAt) return []
 
     state.endedByTimer = true
-    state.endedAt = Date.now()
-
-    for (const [playerId, entry] of state.scores) {
-      const board = this.getPlayerBoard(roomId, playerId)
-      if (board) {
-        const bonus = calculateEndGameBonus(board)
-        entry.score += bonus.total
-      }
-    }
-
-    const scoreboard = this.getScoreboard(roomId)
-    this.onGameEnded?.(roomId, scoreboard, 'timeout')
-    return scoreboard
+    return this.endGame(roomId, 'timeout')
   }
 
   revealCell(roomId: string, playerId: string, row: number, col: number):
-    { success: true; cells: Array<{ cellId: string; value: number | 'mine'; revealedBy: string }>; delta: number; exploded?: boolean; gameEnded?: true; eliminated?: boolean; boardComplete?: boolean }
+    { success: true; cells: Array<{ cellId: string; value: number | 'mine'; revealedBy: string }>; delta: number; exploded?: boolean; gameEnded?: true; eliminated?: boolean; boardComplete?: boolean; teamLives?: number }
     | { success: false; error: string } {
     const state = this.games.get(roomId)
     if (!state) return { success: false, error: 'Partida não encontrada' }
@@ -263,12 +259,105 @@ export class GameManager {
 
     const cell = board[row]?.[col]
     if (!cell) return { success: false, error: 'Célula inválida' }
+    if (cell.isFlagged) return { success: false, error: 'Remova a bandeira antes de revelar' }
     if (cell.isRevealed) return { success: false, error: 'Célula já revelada' }
 
+    // ---- FIRST-CLICK SAFETY ----
+    const firstRevealKey = state.mode === 'cooperative' ? 'shared' : playerId
+    if (!state.firstRevealDone.get(firstRevealKey)) {
+      state.firstRevealDone.set(firstRevealKey, true)
+      if (cell.hasMine) {
+        // Relocate mine from the first-click cell
+        let relocationBoard: Board
+        if (state.mode === 'competitive') {
+          // Use template for relocation, then propagate FULL layout to all player boards
+          relocationBoard = state.template!
+          relocateMine(relocationBoard, row, col)
+          // Propagate the ENTIRE layout (hasMine + adjacentMines) to all player boards,
+          // preserving each player's game state (isRevealed, isFlagged, revealedBy)
+          for (const [pid, boardData] of state.playerBoards) {
+            if (pid !== 'template') {
+              for (let r = 0; r < state.config.rows; r++) {
+                for (let c = 0; c < state.config.cols; c++) {
+                  const playerCell = boardData.board[r][c]
+                  const templateCell = relocationBoard[r][c]
+                  boardData.board[r][c] = {
+                    ...playerCell,           // preserves isRevealed, isFlagged, revealedBy
+                    hasMine: templateCell.hasMine,
+                    adjacentMines: templateCell.adjacentMines,
+                  }
+                }
+              }
+            }
+          }
+        } else {
+          // multi-board or cooperative: just this board
+          relocationBoard = board
+          relocateMine(relocationBoard, row, col)
+        }
+        // Continue as safe reveal (cell no longer has mine)
+      }
+    }
+
+    // Re-read cell from board after first-click safety propagation
+    // In competitive mode, the board was updated with the new layout
+    const updatedCell = board[row]?.[col]
+
     // ---- MINE EXPLOSION ----
-    if (cell.hasMine) {
-      cell.isRevealed = true
+    if (updatedCell.hasMine) {
+      updatedCell.isRevealed = true
       entry.score += calculateScore('explode')
+
+      // Cooperative: manage team lives
+      if (state.mode === 'cooperative') {
+        state.teamLives!--
+        const currentTeamLives = state.teamLives!
+
+        // Record explosion action
+        state.actions.push({
+          playerId,
+          type: 'explode',
+          cellId: `${row}-${col}`,
+          points: calculateScore('explode'),
+          timestamp: new Date().toISOString(),
+        })
+
+        const coopResult = {
+          success: true as const,
+          cells: [{ cellId: `${row}-${col}`, value: 'mine' as const, revealedBy: playerId }],
+          delta: calculateScore('explode'),
+          exploded: true,
+        }
+
+        // Check if explosion completes the board (victory)
+        if (isBoardComplete(board)) {
+          state.playerStatus.set(playerId, 'boardComplete')
+          this.onPlayerBoardComplete?.(roomId, playerId)
+          this.awardCoopWin(state, playerId, entry, roomId)
+          return {
+            ...coopResult,
+            boardComplete: true,
+            gameEnded: true,
+            teamLives: currentTeamLives,
+          }
+        }
+
+        // Board not complete: check if team lives exhausted
+        if (currentTeamLives <= 0) {
+          this.endGame(roomId, 'lose')
+          return {
+            ...coopResult,
+            gameEnded: true,
+            teamLives: 0,
+          }
+        }
+
+        // Still have lives, continue
+        return {
+          ...coopResult,
+          teamLives: currentTeamLives,
+        }
+      }
 
       const result = {
         success: true as const,
@@ -276,6 +365,15 @@ export class GameManager {
         delta: calculateScore('explode'),
         exploded: true,
       }
+
+      // Record explosion action for non-cooperative modes
+      state.actions.push({
+        playerId,
+        type: 'explode',
+        cellId: `${row}-${col}`,
+        points: calculateScore('explode'),
+        timestamp: new Date().toISOString(),
+      })
 
       // Battle-royale: death is definitive
       if (state.mode === 'battle-royale') {
@@ -296,8 +394,9 @@ export class GameManager {
         state.playerStatus.set(playerId, 'boardComplete')
         this.onPlayerBoardComplete?.(roomId, playerId)
 
-        if (state.mode === 'cooperative') {
-          this.endGame(roomId, 'win')
+        // Multi-board (Race): first to complete wins immediately
+        if (state.mode === 'multi-board') {
+          this.endGame(roomId, 'complete', playerId)
           return { ...result, boardComplete: true, gameEnded: true }
         }
 
@@ -316,7 +415,7 @@ export class GameManager {
     let cells: Array<{ cellId: string; value: number | 'mine'; revealedBy: string }>
     let delta: number
 
-    if (cell.adjacentMines === 0) {
+    if (updatedCell.adjacentMines === 0) {
       const revealed = floodFill(board, row, col)
       cells = revealed.map(({ row: r, col: c }) => ({
         cellId: `${r}-${c}`,
@@ -325,22 +424,26 @@ export class GameManager {
       }))
       delta = revealed.length > 5 ? calculateScore('flood-fill') : calculateScore('reveal')
     } else {
-      cell.isRevealed = true
-      cells = [{ cellId: `${row}-${col}`, value: cell.adjacentMines, revealedBy: playerId }]
+      updatedCell.isRevealed = true
+      cells = [{ cellId: `${row}-${col}`, value: updatedCell.adjacentMines, revealedBy: playerId }]
       delta = calculateScore('reveal')
     }
 
     entry.score += delta
 
+    // Record action for safe reveal
+    const revealType = updatedCell.adjacentMines === 0 ? 'flood-fill' : 'reveal'
+    state.actions.push({
+      playerId,
+      type: revealType,
+      cellId: `${row}-${col}`,
+      points: delta,
+      timestamp: new Date().toISOString(),
+    })
+
     // ---- COOPERATIVE WIN ----
     if (state.mode === 'cooperative' && isBoardComplete(board)) {
-      entry.score += calculateScore('win')
-
-      const elapsed = (Date.now() - state.startedAt) / 1000
-      const timeBonus = Math.max(0, Math.round(COOP_TIME_BONUS_MAX * ((180 - elapsed) / 60)))
-      entry.score += timeBonus
-
-      this.endGame(roomId, 'win')
+      this.awardCoopWin(state, playerId, entry, roomId)
 
       return {
         success: true,
@@ -354,6 +457,12 @@ export class GameManager {
     if (isBoardComplete(board)) {
       state.playerStatus.set(playerId, 'boardComplete')
       this.onPlayerBoardComplete?.(roomId, playerId)
+
+      // Multi-board (Race): first to complete wins immediately
+      if (state.mode === 'multi-board') {
+        this.endGame(roomId, 'complete', playerId)
+        return { success: true, cells, delta, boardComplete: true, gameEnded: true }
+      }
 
       if (this.checkAllPlayersDone(state)) {
         this.endGame(roomId, 'complete')
@@ -390,11 +499,38 @@ export class GameManager {
 
     cell.isFlagged = !cell.isFlagged
 
+    // Score flags live: +25 for correct flag, -15 for wrong flag
+    // Symmetric: removing a flag reverses the delta
+    let delta = 0
+    if (cell.isFlagged) {
+      // Placing flag
+      delta = cell.hasMine ? calculateScore('flag-correct') : calculateScore('flag-wrong')
+    } else {
+      // Removing flag - reverse the delta
+      delta = cell.hasMine ? -calculateScore('flag-correct') : -calculateScore('flag-wrong')
+    }
+    entry.score += delta
+
+    // Record flag action
+    let flagType: 'flag-correct' | 'flag-wrong'
+    if (cell.hasMine) {
+      flagType = cell.isFlagged ? 'flag-correct' : 'flag-wrong'
+    } else {
+      flagType = cell.isFlagged ? 'flag-wrong' : 'flag-correct'
+    }
+    state.actions.push({
+      playerId,
+      type: flagType,
+      cellId: `${row}-${col}`,
+      points: delta,
+      timestamp: new Date().toISOString(),
+    })
+
     const result = {
       success: true as const,
       cellId: `${row}-${col}`,
       flagged: cell.isFlagged,
-      delta: 0,
+      delta,
     }
 
     // Check if this completed the board
@@ -403,7 +539,13 @@ export class GameManager {
       this.onPlayerBoardComplete?.(roomId, playerId)
 
       if (state.mode === 'cooperative') {
-        this.endGame(roomId, 'win')
+        this.awardCoopWin(state, playerId, entry, roomId)
+        return { ...result, boardComplete: true, gameEnded: true }
+      }
+
+      // Multi-board (Race): first to complete wins immediately
+      if (state.mode === 'multi-board') {
+        this.endGame(roomId, 'complete', playerId)
         return { ...result, boardComplete: true, gameEnded: true }
       }
 
@@ -426,13 +568,26 @@ export class GameManager {
     return alive
   }
 
-  getScoreboard(roomId: string): GameScoreEntry[] {
+  getScoreboard(roomId: string, priorityPlayerId?: string): GameScoreEntry[] {
     const state = this.games.get(roomId)
     if (!state) return []
 
-    return Array.from(state.scores.values())
+    const sorted = Array.from(state.scores.values())
       .sort((a, b) => b.score - a.score)
-      .map((entry, i) => ({ ...entry, rank: i + 1 })) as any
+      .map((entry, i) => ({ ...entry, rank: i + 1 }))
+
+    // If priorityPlayerId is provided, move that player to rank 1
+    if (priorityPlayerId) {
+      const priorityIndex = sorted.findIndex(e => e.playerId === priorityPlayerId)
+      if (priorityIndex > 0) {
+        const [priorityEntry] = sorted.splice(priorityIndex, 1)
+        sorted.unshift({ ...priorityEntry, rank: 1 })
+        // Renumber ranks
+        sorted.forEach((entry, i) => { entry.rank = i + 1 })
+      }
+    }
+
+    return sorted
   }
 
   removeGame(roomId: string): void {

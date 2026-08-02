@@ -236,7 +236,7 @@ minado-gg/
 │       │   └── RoomManager.ts       # CRUD de salas + ciclo de vida
 │       ├── sockets/
 │       │   ├── roomHandler.ts       # room:create/join/leave/ready/start/list
-│       │   └── gameHandler.ts       # game:reveal/flag/ping
+│       │   └── gameHandler.ts       # game:reveal/flag
 │       ├── routes/
 │       │   ├── auth.ts              # Register, login, GET/PUT /me
 │       │   ├── oauth.ts             # OAuth Google, Discord, GitHub
@@ -472,7 +472,7 @@ graph TB
   subgraph WS_Stack["Pilha Socket.IO"]
     AUTH_MW[io.use: verificar JWT]
     RH[roomHandler<br/>create, join, leave, ready, start]
-    GH[gameHandler<br/>reveal, flag, ping]
+    GH[gameHandler<br/>reveal, flag]
     DC[disconnect → markPlayerDisconnected]
   end
 
@@ -580,7 +580,6 @@ interface GameState {
 | `chat:message` | `{ text }` | roomHandler |
 | `game:reveal` | `{ cellId: "linha-coluna" }` | gameHandler |
 | `game:flag` | `{ cellId: "linha-coluna" }` | gameHandler |
-| `game:ping` | `{ type }` | gameHandler |
 
 #### Servidor → Cliente
 
@@ -598,7 +597,6 @@ interface GameState {
 | `game:cellFlagged` | `{ cellId, playerId, flagged }` | Por jogador ou sala | Célula marcada |
 | `game:scoreUpdate` | `{ playerId, delta, total }` | Sala | Pontuação mudou |
 | `game:ended` | `{ result, scoreboard }` | Sala | Partida encerrada |
-| `game:ping` | `{ playerId, type }` | Sala | Repetidor de ping |
 | `chat:message` | `{ id, fromId, from, text, ts }` | Sala | Mensagem de chat |
 | `error` | `{ code, message }` | Remetente | Erro |
 

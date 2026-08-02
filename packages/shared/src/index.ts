@@ -186,11 +186,80 @@ export function isBoardComplete(board: Board): boolean {
 }
 
 // Check win condition
+// Client-only: used by offline path in gameStore.ts (server uses isBoardComplete)
 export function checkWin(board: Board): boolean {
   for (const row of board) {
     for (const cell of row) {
       if (!cell.hasMine && !cell.isRevealed) return false
     }
   }
+  return true
+}
+
+// First-click safety: relocate a mine from the clicked cell to a random valid position
+export function relocateMine(board: Board, safeRow: number, safeCol: number): boolean {
+  const rows = board.length
+  const cols = board[0].length
+
+  // Precondition: the clicked cell MUST have a mine (that's why first-click safety triggered)
+  if (!board[safeRow][safeCol].hasMine) return false
+
+  // Find a target cell that is NOT a mine and NOT in the 3x3 neighborhood of (safeRow, safeCol)
+  let targetCell: { row: number; col: number } | null = null
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (!board[r][c].hasMine) {
+        const inSafeZone = Math.abs(r - safeRow) <= 1 && Math.abs(c - safeCol) <= 1
+        if (!inSafeZone) {
+          targetCell = { row: r, col: c }
+          break
+        }
+      }
+    }
+    if (targetCell) break
+  }
+
+  if (!targetCell) return false // No valid target (should not happen with mines <= rows*cols - 9)
+
+  // Swap: move mine FROM clicked cell TO target cell
+  board[safeRow][safeCol].hasMine = false
+  board[targetCell.row][targetCell.col].hasMine = true
+
+  // Recalculate adjacentMines for affected neighborhoods (both cells and their surrounding 3x3 areas)
+  const affectedCells = new Set<string>()
+
+  // Add neighborhoods of both cells
+  const addNeighborhood = (r: number, c: number) => {
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const nr = r + dr
+        const nc = c + dc
+        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+          affectedCells.add(`${nr}-${nc}`)
+        }
+      }
+    }
+  }
+
+  addNeighborhood(safeRow, safeCol)
+  addNeighborhood(targetCell.row, targetCell.col)
+
+  // Recalculate adjacentMines for affected cells
+  for (const key of affectedCells) {
+    const [r, c] = key.split('-').map(Number)
+    if (board[r][c].hasMine) continue
+    let count = 0
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const nr = r + dr
+        const nc = c + dc
+        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && board[nr][nc].hasMine) {
+          count++
+        }
+      }
+    }
+    board[r][c].adjacentMines = count
+  }
+
   return true
 }

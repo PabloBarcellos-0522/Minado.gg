@@ -30,6 +30,7 @@ const roomManager = new RoomManager()
 
 gameManager.onGameEnded = (roomId, scoreboard, reason) => {
   if (reason === 'eliminated') return
+  const state = gameManager['games'].get(roomId)
   io.to(roomId).emit('game:ended', {
     result: reason,
     scoreboard: scoreboard.map((entry, i) => ({
@@ -37,6 +38,7 @@ gameManager.onGameEnded = (roomId, scoreboard, reason) => {
       score: entry.score,
       rank: i + 1,
     })),
+    actions: state?.actions ?? [],
   })
   const room = roomManager.getRoom(roomId)
   if (room) {

@@ -155,5 +155,5 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
     // Game state is removed in endGame, no need to call removeGame here
   })
 
-  // game:ping handler removed - pings work via chat:message
+  // Ping handler removed - pings work via chat:message
 }

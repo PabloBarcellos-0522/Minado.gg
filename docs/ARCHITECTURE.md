@@ -571,7 +571,7 @@ interface GameState {
 
 | Event | Payload | Handled by |
 |-------|---------|------------|
-| `room:create` | `{ name, mode, difficulty, isPrivate, password?, maxPlayers, boardConfig? }` | roomHandler |
+| `room:create` | `{ name, mode, difficulty, isPrivate, password?, maxPlayers, boardConfig?, timeLimit }` | roomHandler |
 | `room:join` | `{ roomId, username? }` | roomHandler |
 | `room:leave` | — | roomHandler |
 | `room:ready` | `{ ready }` | roomHandler |
@@ -580,7 +580,6 @@ interface GameState {
 | `chat:message` | `{ text }` | roomHandler |
 | `game:reveal` | `{ cellId: "row-col" }` | gameHandler |
 | `game:flag` | `{ cellId: "row-col" }` | gameHandler |
-| `game:ping` | `{ type }` | gameHandler |
 
 #### Server → Client
 
@@ -593,14 +592,23 @@ interface GameState {
 | `room:playerLeft` | `{ playerId }` | Room | Player left |
 | `game:playerRemoved` | `{ playerId, username }` | Room | Removed during active game |
 | `game:removedForInactivity` | `{ reason }` | Sender | Rejoin denied |
-| `game:started` | `{ board, boardMeta, players, gameMode }` | Per-player or room | Game begins |
-| `game:cellRevealed` | `{ cellId, value, revealedBy, exploded? }` or `{ batch: [...] }` | Per-player or room | Cell(s) revealed |
+| `game:started` | `{ board, boardMeta, players, gameMode, teamLives? }` | Per-player or room | Game begins |
+| `game:cellRevealed` | See [3 shapes below](#gamecellrevealed-shapes-3-variants) | Per-player or room | Cell(s) revealed |
 | `game:cellFlagged` | `{ cellId, playerId, flagged }` | Per-player or room | Cell flagged |
 | `game:scoreUpdate` | `{ playerId, delta, total }` | Room | Score changed |
-| `game:ended` | `{ result, scoreboard }` | Room | Game over |
-| `game:ping` | `{ playerId, type }` | Room | Ping relay |
+| `game:playerBoardComplete` | `{ playerId }` | Room | Board fully cleared |
+| `game:playerEliminated` | `{ playerId }` | Room | Player hit mine |
+| `game:ended` | `{ result, scoreboard, actions? }` | Room (or single socket for `eliminated`) | Game over |
 | `chat:message` | `{ id, fromId, from, text, ts }` | Room | Chat |
 | `error` | `{ code, message }` | Sender | Error |
+
+#### `game:cellRevealed` shapes (3 variants)
+
+1. **Single cell**: `{ cellId: string, value: number, revealedBy: string }`
+2. **Batch (flood-fill)**: `{ batch: Array<{ cellId: string, value: number, revealedBy: string }> }`
+3. **Explosion**: `{ cellId: string, value: 'mine', revealedBy: string, exploded: true, teamLives?: number }`
+
+**Note on `game:ended` with `result: 'eliminated'`**: This is emitted **only to the eliminated player's socket** (see `gameHandler.ts:78-85`). Other players continue playing and do NOT receive `game:ended` for this reason. The broadcast `game:ended` (see `index.ts:31-46`) fires only for `'victory'`, `'last_standing'`, `'all_exploded'`, `'time_up'`, `'board_cleared'`.
 
 **Emission scope logic** (`emitToTarget`):
 - **Cooperative mode** → emits to entire room (everyone sees everything)

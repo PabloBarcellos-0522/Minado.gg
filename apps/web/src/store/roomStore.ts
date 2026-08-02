@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Room, GameMode, Difficulty, BoardConfig } from '@minado/shared'
+import type { Room, GameMode, Difficulty, BoardConfig, Board } from '@minado/shared'
 import { getSocket, onSocketEvent, waitForConnection } from '@/lib/socket'
 import { useAuthStore } from './authStore'
 
@@ -19,7 +19,7 @@ interface RoomState {
   joinRoom: (roomId: string) => Promise<void>
   leaveRoom: () => void
   toggleReady: () => void
-  startGame: () => void
+  startGame: () => Promise<void>
   setCurrentRoom: (room: RoomWithName | null) => void
   addPlayer: (player: RoomWithName['players'][0]) => void
   removePlayer: (playerId: string) => void
@@ -74,7 +74,7 @@ export const useRoomStore = create<RoomState>()((set, get) => ({
       }),
       onSocketEvent('game:started', (data: unknown) => {
         const ev = data as {
-          board?: any
+          board?: Board
           boardMeta: { rows: number; cols: number; mines: number; mode: string }
           players: RoomWithName['players']
         }
@@ -167,26 +167,46 @@ export const useRoomStore = create<RoomState>()((set, get) => ({
     const userId = useAuthStore.getState().user?.id
     if (!userId) return
 
+    const playerAtual = currentRoom.players.find((p) => p.id === userId)
+    if (!playerAtual) return
+
+    const nextReady = !playerAtual.isReady
+
     const socket = getSocket()
     if (socket.connected) {
-      socket.emit('room:ready', { ready: true })
+      socket.emit('room:ready', { ready: nextReady })
     }
 
     set({
       currentRoom: {
         ...currentRoom,
         players: currentRoom.players.map((p) =>
-          p.id === userId ? { ...p, isReady: !p.isReady } : p
+          p.id === userId ? { ...p, isReady: nextReady } : p
         ),
       },
     })
   },
 
-  startGame: () => {
+  startGame: (): Promise<void> => {
     const socket = getSocket()
-    if (socket.connected) {
+    if (!socket.connected) return Promise.reject(new Error('Sem conexão com o servidor'))
+
+    return new Promise<void>((resolve, reject) => {
+      const onStarted = () => {
+        socket.off('room:started', onStarted)
+        socket.off('error', onError)
+        resolve()
+      }
+      const onError = (err: { message: string }) => {
+        socket.off('room:started', onStarted)
+        socket.off('error', onError)
+        set({ error: err.message })
+        reject(new Error(err.message))
+      }
+      socket.on('room:started', onStarted)
+      socket.on('error', onError)
       socket.emit('room:start')
-    }
+    })
   },
 
   setCurrentRoom: (room) => set({ currentRoom: room }),

@@ -50,6 +50,7 @@ export function MatchPage() {
   const timeRemaining = useGameStore((s) => s.timeRemaining)
   const boardComplete = useGameStore((s) => s.boardComplete)
   const eliminated = useGameStore((s) => s.eliminated)
+  const teamLives = useGameStore((s) => s.teamLives)
 
   const revealCell = useGameStore((s) => s.revealCell)
   const flagCell = useGameStore((s) => s.flagCell)
@@ -205,6 +206,13 @@ export function MatchPage() {
                 <span className="font-heading font-bold text-h5 text-ink tabular-nums">{minesRemaining}</span>
                 <span className="text-small text-ink-muted">minas</span>
               </div>
+              {gameMode === 'cooperative' && (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-[14px] bg-surface border border-border">
+                  <span className="text-h5">❤️</span>
+                  <span className="font-heading font-bold text-h5 text-ink tabular-nums">{teamLives}</span>
+                  <span className="text-small text-ink-muted">vidas</span>
+                </div>
+              )}
             </div>
 
             {/* Live Scoreboard */}
@@ -239,7 +247,7 @@ export function MatchPage() {
               <GameBoard board={board} onReveal={handleReveal} onFlag={handleFlag} />
             </div>
             {showConfetti && <FxConfetti active={true} onComplete={() => setShowConfetti(false)} />}
-            {(boardComplete || (timeRemaining === 0 && gameMode !== 'cooperative')) && (
+            {boardComplete && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="px-6 py-3 rounded-[14px] bg-surface/90 border border-border backdrop-blur-sm">
                   <span className="font-heading font-bold text-h5 text-ink">Tabuleiro completo</span>
@@ -341,7 +349,7 @@ export function MatchPage() {
             <div className="space-y-2 text-small">
               <div className="flex justify-between">
                 <span className="text-ink-muted">Modo</span>
-                <span className="font-heading font-bold text-ink">{modeLabels.competitive}</span>
+                <span className="font-heading font-bold text-ink">{modeLabels[gameMode]}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-ink-muted">Dificuldade</span>

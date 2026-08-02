@@ -53,7 +53,15 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
       maxPlayers: room.maxPlayers,
       boardConfig: room.boardConfig,
       timeLimit: room.timeLimit,
-      players: room.players,
+      players: room.players.map((p) => ({
+              id: p.id,
+              username: p.username,
+              avatarUrl: p.avatarUrl,
+              isReady: p.isReady,
+              isHost: p.isHost,
+              isConnected: p.isConnected,
+              score: 0,
+            })),
       status: room.status,
     })
 
@@ -115,7 +123,12 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
             },
             gameMode: room.mode,
             players: room.players.map((p) => ({
-              ...p,
+              id: p.id,
+              username: p.username,
+              avatarUrl: p.avatarUrl,
+              isReady: p.isReady,
+              isHost: p.isHost,
+              isConnected: p.isConnected,
               score: gameState.scores.get(p.id)?.score ?? 0,
             })),
             teamLives: room.mode === 'cooperative' ? gameState.teamLives : undefined,
@@ -240,7 +253,15 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
           mode: room.mode,
           timeLimit,
         },
-        players: room.players,
+        players: room.players.map((p) => ({
+              id: p.id,
+              username: p.username,
+              avatarUrl: p.avatarUrl,
+              isReady: p.isReady,
+              isHost: p.isHost,
+              isConnected: p.isConnected,
+              score: 0,
+            })),
         teamLives: gameState?.teamLives,
       })
     } else {
@@ -258,7 +279,15 @@ export function setupRoomHandlers(io: Server, socket: Socket, roomManager: RoomM
               mode: room.mode,
               timeLimit,
             },
-            players: room.players,
+            players: room.players.map((p) => ({
+              id: p.id,
+              username: p.username,
+              avatarUrl: p.avatarUrl,
+              isReady: p.isReady,
+              isHost: p.isHost,
+              isConnected: p.isConnected,
+              score: 0,
+            })),
           })
         }
       }

@@ -22,7 +22,7 @@ export async function apiFetch<T = unknown>(path: string, options: RequestInit =
   const data = await res.json()
 
   if (!res.ok) {
-    throw new Error((data as any).error || `HTTP ${res.status}`)
+    throw new Error((data as { error?: string }).error || `HTTP ${res.status}`)
   }
 
   return data as T

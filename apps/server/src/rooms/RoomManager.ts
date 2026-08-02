@@ -1,6 +1,6 @@
 import type { Room, GameMode, Difficulty, BoardConfig, Player } from '@minado/shared'
 
-interface RoomData extends Room {
+export interface RoomData extends Room {
   name: string
   password?: string
   playerSockets: Map<string, string>
@@ -200,11 +200,20 @@ export class RoomManager {
   }
 
   toggleReady(roomId: string, playerId: string): RoomData | null {
+    return this.setReady(roomId, playerId, undefined)
+  }
+
+  setReady(roomId: string, playerId: string, ready?: boolean): RoomData | null {
     const room = this.rooms.get(roomId)
     if (!room) return null
 
+    const player = room.players.find((p) => p.id === playerId)
+    if (!player) return null
+
+    const nextReady = ready !== undefined ? ready : !player.isReady
+
     room.players = room.players.map((p) =>
-      p.id === playerId ? { ...p, isReady: !p.isReady } : p
+      p.id === playerId ? { ...p, isReady: nextReady } : p
     )
     return room
   }

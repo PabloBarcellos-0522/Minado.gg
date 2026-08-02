@@ -48,14 +48,13 @@ export function RoomPage() {
   const leaveRoom = useRoomStore((s) => s.leaveRoom)
   const toggleReady = useRoomStore((s) => s.toggleReady)
   const startGame = useRoomStore((s) => s.startGame)
-  const initSocketListeners = useRoomStore((s) => s.initSocketListeners)
   const roomError = useRoomStore((s) => s.error)
   const isLoading = useRoomStore((s) => s.isLoading)
   const user = useAuthStore((s) => s.user)
 
   const [messages, setMessages] = useState<Array<{ id: string; from: string; text: string; ts: string; isSystem?: boolean }>>([])
   const [showInviteModal, setShowInviteModal] = useState(false)
-  const [showCreatedModal, setShowCreatedModal] = useState(!!(location.state as any)?.justCreated)
+  const [showCreatedModal, setShowCreatedModal] = useState(!!(location.state as { justCreated?: boolean })?.justCreated)
   const [inviteLink, setInviteLink] = useState('')
   const currentUserId = user?.id || '1'
   const [countdown, setCountdown] = useState<number | null>(null)
@@ -80,10 +79,8 @@ export function RoomPage() {
       }])
     })
 
-    const cleanup = initSocketListeners()
     return () => {
       unsubChat()
-      cleanup()
       if (!isNavigatingToMatch.current && joinedInThisEffect.current) {
         leaveRoom()
       }
@@ -103,8 +100,10 @@ export function RoomPage() {
 
   const handleStartGame = () => {
     isNavigatingToMatch.current = true
-    startGame()
-    setTimeout(() => navigate(`/partida/${id}`), 500)
+    startGame().catch(() => {
+      // Error already set in store by roomStore; just clear navigation flag
+      isNavigatingToMatch.current = false
+    })
   }
 
   useEffect(() => {
@@ -249,6 +248,12 @@ export function RoomPage() {
             )}
           </div>
         </div>
+
+        {roomError && currentRoom && (
+          <div className="mb-4 p-3 rounded-[14px] bg-error-soft border border-error text-error text-small" role="alert">
+            {roomError}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
           {/* Left: Player Roster + Chat */}
