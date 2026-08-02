@@ -58,8 +58,11 @@ model Match {
   status    String   @default("playing")
   startedAt DateTime @default(now())
   endedAt   DateTime?
+  roomId    String?
+  players   MatchPlayer[]
 
-  players MatchPlayer[]
+  @@index([startedAt])               // NOVO (SPEC 02)
+  @@index([roomId])                  // NOVO (SPEC 02)
 }
 
 model MatchPlayer {
