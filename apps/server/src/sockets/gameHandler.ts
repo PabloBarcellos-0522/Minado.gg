@@ -26,10 +26,9 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
     const row = parseInt(rowStr, 10)
     const col = parseInt(colStr, 10)
 
-    let gameState = gameManager.getGame(room.id)
-    if (!gameState) {
-      gameManager.startGame(room.id, room.boardConfig, room.players, room.mode, room.timeLimit || 0)
-      gameState = gameManager.getGame(room.id)!
+    if (!gameManager.getGame(room.id)) {
+      socket.emit('error', { code: 'GAME_NOT_FOUND', message: 'Partida não encontrada' })
+      return
     }
 
     const playerId = getPlayerId(socket)
@@ -43,18 +42,32 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
     const emit = (event: string, data: any) => emitToTarget(io, socket, room, event, data)
 
     if (result.exploded) {
-      emit('game:cellRevealed', {
+      const cellRevealedData = {
         cellId: data.cellId,
         value: 'mine',
         revealedBy: playerId,
         exploded: true,
-      })
+        teamLives: room.mode === 'cooperative' ? result.teamLives : undefined,
+      }
+      emit('game:cellRevealed', cellRevealedData)
       io.to(room.id).emit('game:scoreUpdate', {
         playerId,
         delta: result.delta,
-        total: (gameState.scores.get(playerId)?.score || 0),
+        total: (gameManager.getGame(room.id)?.scores.get(playerId)?.score || 0),
       })
 
+      // Cooperative: no individual elimination, only team lives
+      if (room.mode === 'cooperative') {
+        if (result.gameEnded) {
+          // Game ended (win or lose) — onGameEnded broadcasts to room
+        } else if (result.boardComplete) {
+          io.to(room.id).emit('game:playerBoardComplete', { playerId })
+        }
+        // No game:playerEliminated emitted in cooperative mode
+        return
+      }
+
+      // Battle-royale/multi-board: individual elimination
       if (result.eliminated) {
         if (result.gameEnded) {
           // Game ended (last_standing) — onGameEnded broadcasts to room
@@ -75,9 +88,7 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
         io.to(room.id).emit('game:playerBoardComplete', { playerId })
       }
 
-      if (result.gameEnded) {
-        gameManager.removeGame(room.id)
-      }
+      // Game state is removed in endGame, no need to call removeGame here
       return
     }
 
@@ -95,16 +106,14 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
     io.to(room.id).emit('game:scoreUpdate', {
       playerId,
       delta: result.delta,
-      total: (gameState.scores.get(playerId)?.score || 0),
+      total: (gameManager.getGame(room.id)?.scores.get(playerId)?.score || 0),
     })
 
     if (result.boardComplete) {
       io.to(room.id).emit('game:playerBoardComplete', { playerId })
     }
 
-    if (result.gameEnded) {
-      gameManager.removeGame(room.id)
-    }
+    // Game state is removed in endGame, no need to call removeGame here
   })
 
   socket.on('game:flag', (data: { cellId: string }) => {
@@ -119,7 +128,10 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
     const playerId = getPlayerId(socket)
 
     const result = gameManager.flagCell(room.id, playerId, row, col)
-    if (!result.success) return
+    if (!result.success) {
+      socket.emit('error', { code: 'FLAG_FAILED', message: result.error })
+      return
+    }
 
     const emit = (event: string, data: any) => emitToTarget(io, socket, room, event, data)
 
@@ -129,24 +141,19 @@ export function setupGameHandlers(io: Server, socket: Socket, roomManager: RoomM
       flagged: result.flagged,
     })
 
+    // Emit score update for flag action
+    io.to(room.id).emit('game:scoreUpdate', {
+      playerId,
+      delta: result.delta,
+      total: (gameManager.getGame(room.id)?.scores.get(playerId)?.score || 0),
+    })
+
     if (result.boardComplete) {
       io.to(room.id).emit('game:playerBoardComplete', { playerId })
     }
 
-    if (result.gameEnded) {
-      gameManager.removeGame(room.id)
-    }
+    // Game state is removed in endGame, no need to call removeGame here
   })
 
-  socket.on('game:ping', (data: { type: string }) => {
-    const room = roomManager.getRoomBySocket(socket.id)
-    if (!room) return
-
-    io.to(room.id).emit('game:ping', {
-      playerId: socket.id,
-      type: data.type,
-    })
-  })
-
-  // chat:message is handled in roomHandler.ts — do not duplicate
+  // game:ping handler removed - pings work via chat:message
 }
