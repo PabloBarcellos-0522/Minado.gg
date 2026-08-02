@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.js'
 import oauthRoutes from './routes/oauth.js'
 import usersRoutes from './routes/users.js'
 import { verifyToken } from './middleware/auth.js'
+import { persistMatch } from './db/gamePersistence.js'
 import type { Socket } from 'socket.io'
 
 const PORT = parseInt(process.env.PORT || '3001', 10)
@@ -43,6 +44,25 @@ gameManager.onGameEnded = (roomId, scoreboard, reason, game) => {
   if (room) {
     room.status = 'finished'
     io.to(roomId).emit('room:state', room)
+  }
+
+  // NEW: Fire-and-forget persistence
+  if (scoreboard.length > 0) {
+    const endedAt = game.endedAt ? new Date(game.endedAt) : new Date()
+    const board = room?.boardConfig
+    if (board) {
+      persistMatch({
+        roomId,
+        mode: game.mode,
+        config: board,
+        startedAt: new Date(game.startedAt),
+        endedAt: new Date(game.endedAt ?? endedAt.getTime()),
+        reason,
+        scoreboard: scoreboard.map((e, i) => ({ playerId: e.playerId, score: e.score, rank: i + 1 })),
+        actions: Object.fromEntries(game.actions),
+        explodedPlayers: Array.from(game.explodedPlayers),
+      }).catch((err) => console.error('[persistMatch]', err))
+    }
   }
 }
 
