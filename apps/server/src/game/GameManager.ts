@@ -78,7 +78,7 @@ function extractMinePositions(board: Board): Set<string> {
 export class GameManager {
   private games: Map<string, GameState> = new Map()
 
-  onGameEnded?: (roomId: string, scoreboard: GameScoreEntry[], reason: GameEndReason) => void
+  onGameEnded?: (roomId: string, scoreboard: GameScoreEntry[], reason: GameEndReason, game: GameState) => void
   onPlayerEliminated?: (roomId: string, playerId: string) => void
   onPlayerBoardComplete?: (roomId: string, playerId: string) => void
 
@@ -237,7 +237,7 @@ export class GameManager {
     }
 
     const scoreboard = this.getScoreboard(roomId, priorityPlayerId)
-    this.onGameEnded?.(roomId, scoreboard, reason)
+    this.onGameEnded?.(roomId, scoreboard, reason, state)
     this.games.delete(roomId)
     return scoreboard
   }

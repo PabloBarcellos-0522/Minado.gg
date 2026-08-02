@@ -28,9 +28,8 @@ const io = new Server(httpServer, {
 const gameManager = new GameManager()
 const roomManager = new RoomManager()
 
-gameManager.onGameEnded = (roomId, scoreboard, reason) => {
+gameManager.onGameEnded = (roomId, scoreboard, reason, game) => {
   if (reason === 'eliminated') return
-  const state = gameManager['games'].get(roomId)
   io.to(roomId).emit('game:ended', {
     result: reason,
     scoreboard: scoreboard.map((entry, i) => ({
@@ -38,7 +37,7 @@ gameManager.onGameEnded = (roomId, scoreboard, reason) => {
       score: entry.score,
       rank: i + 1,
     })),
-    actions: state?.actions ?? [],
+    actions: game.actions ? Array.from(game.actions.values()).flat() : [],
   })
   const room = roomManager.getRoom(roomId)
   if (room) {
