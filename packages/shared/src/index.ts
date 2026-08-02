@@ -263,3 +263,18 @@ export function relocateMine(board: Board, safeRow: number, safeCol: number): bo
 
   return true
 }
+
+// XP / level (SPEC 02)
+export const XP_BASE_BY_MODE: Record<GameMode, number> = {
+  competitive: 100,
+  'multi-board': 100,
+  cooperative: 150,
+  'battle-royale': 150,
+  'fog-of-war': 120,
+}
+export const XP_WIN_BONUS = 200
+export const XP_PER_SCORE_UNIT = 10
+
+export function levelForXp(xp: number): number {
+  return Math.floor(Math.sqrt(Math.max(0, xp) / 100)) + 1
+}
